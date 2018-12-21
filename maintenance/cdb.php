@@ -22,17 +22,19 @@
  * @ingroup Maintenance
  */
 
-/** */
-require_once( dirname( __FILE__ ) . '/commandLine.inc' );
+use Cdb\Exception as CdbException;
+use Cdb\Reader as CdbReader;
+
+require_once __DIR__ . '/commandLine.inc';
 
 function cdbShowHelp( $command ) {
-	$commandList = array(
+	$commandList = [
 		'load' => 'load a cdb file for reading',
-		'get'  => 'get a value for a key',
+		'get' => 'get a value for a key',
 		'exit' => 'exit cdb',
 		'quit' => 'exit cdb',
 		'help' => 'help about a command',
-	);
+	];
 	if ( !$command ) {
 		$command = 'fullhelp';
 	}
@@ -52,12 +54,14 @@ do {
 	$bad = false;
 	$showhelp = false;
 	$quit = false;
-	static $fileHandle;
+	static $fileHandle = false;
 
 	$line = Maintenance::readconsole();
-	if ( $line === false ) exit;
+	if ( $line === false ) {
+		exit;
+	}
 
-	$args = explode( ' ', $line );
+	$args = explode( ' ', $line, 2 );
 	$command = array_shift( $args );
 
 	// process command
@@ -67,29 +71,38 @@ do {
 			cdbShowHelp( array_shift( $args ) );
 			break;
 		case 'load':
-			if( !isset( $args[0] ) ) {
+			if ( !isset( $args[0] ) ) {
 				print "Need a filename there buddy\n";
 				break;
 			}
 			$file = $args[0];
 			print "Loading cdb file $file...";
-			$fileHandle = CdbReader::open( $file );
-			if( !$fileHandle ) {
+			try {
+				$fileHandle = CdbReader::open( $file );
+			} catch ( CdbException $e ) {
+			}
+
+			if ( !$fileHandle ) {
 				print "not a cdb file or unable to read it\n";
 			} else {
 				print "ok\n";
 			}
 			break;
 		case 'get':
-			if( !$fileHandle ) {
+			if ( !$fileHandle ) {
 				print "Need to load a cdb file first\n";
 				break;
 			}
-			if( !isset( $args[0] ) ) {
+			if ( !isset( $args[0] ) ) {
 				print "Need to specify a key, Luke\n";
 				break;
 			}
-			$res = $fileHandle->get( $args[0] );
+			try {
+				$res = $fileHandle->get( $args[0] );
+			} catch ( CdbException $e ) {
+				print "Unable to read key from file\n";
+				break;
+			}
 			if ( $res === false ) {
 				print "No such key/value pair\n";
 			} elseif ( is_string( $res ) ) {

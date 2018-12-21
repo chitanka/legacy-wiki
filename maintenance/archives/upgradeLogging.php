@@ -1,6 +1,6 @@
 <?php
 /**
- * Replication-safe online upgrade script for log_id/log_deleted
+ * Replication-safe online upgrade for log_id/log_deleted fields.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,19 +21,27 @@
  * @ingroup MaintenanceArchive
  */
 
-require( dirname( __FILE__ ) . '/../commandLine.inc' );
+require __DIR__ . '/../commandLine.inc';
 
+use Wikimedia\Rdbms\IMaintainableDatabase;
+
+/**
+ * Maintenance script that upgrade for log_id/log_deleted fields in a
+ * replication-safe way.
+ *
+ * @ingroup Maintenance
+ */
 class UpdateLogging {
 
 	/**
-	 * @var DatabaseBase
+	 * @var IMaintainableDatabase
 	 */
-	var $dbw;
-	var $batchSize = 1000;
-	var $minTs = false;
+	public $dbw;
+	public $batchSize = 1000;
+	public $minTs = false;
 
 	function execute() {
-		$this->dbw = wfGetDB( DB_MASTER );
+		$this->dbw = $this->getDB( DB_MASTER );
 		$logging = $this->dbw->tableName( 'logging' );
 		$logging_1_10 = $this->dbw->tableName( 'logging_1_10' );
 		$logging_pre_1_10 = $this->dbw->tableName( 'logging_pre_1_10' );
@@ -46,6 +54,7 @@ class UpdateLogging {
 
 		if ( $this->dbw->tableExists( 'logging_pre_1_10' ) ) {
 			echo "This script has already been run to completion\n";
+
 			return;
 		}
 
@@ -63,21 +72,21 @@ CREATE TABLE $logging_1_10 (
   -- action field, but only the type controls categorization.
   log_type varbinary(10) NOT NULL default '',
   log_action varbinary(10) NOT NULL default '',
-  
+
   -- Timestamp. Duh.
   log_timestamp binary(14) NOT NULL default '19700101000000',
-  
+
   -- The user who performed this action; key to user_id
   log_user int unsigned NOT NULL default 0,
-  
+
   -- Key to the page affected. Where a user is the target,
   -- this will point to the user page.
   log_namespace int NOT NULL default 0,
   log_title varchar(255) binary NOT NULL default '',
-  
+
   -- Freeform text. Interpreted as edit history comments.
   log_comment varchar(255) NOT NULL default '',
-  
+
   -- LF separated list of miscellaneous parameters
   log_params blob NOT NULL,
 
@@ -118,16 +127,18 @@ EOT;
 
 	/**
 	 * Copy all rows from $srcTable to $dstTable
+	 * @param string $srcTable
+	 * @param string $dstTable
 	 */
 	function sync( $srcTable, $dstTable ) {
 		$batchSize = 1000;
-		$minTs = $this->dbw->selectField( $srcTable, 'MIN(log_timestamp)', false, __METHOD__ );
+		$minTs = $this->dbw->selectField( $srcTable, 'MIN(log_timestamp)', '', __METHOD__ );
 		$minTsUnix = wfTimestamp( TS_UNIX, $minTs );
 		$numRowsCopied = 0;
-		
+
 		while ( true ) {
-			$maxTs = $this->dbw->selectField( $srcTable, 'MAX(log_timestamp)', false, __METHOD__ );
-			$copyPos = $this->dbw->selectField( $dstTable, 'MAX(log_timestamp)', false, __METHOD__ );
+			$maxTs = $this->dbw->selectField( $srcTable, 'MAX(log_timestamp)', '', __METHOD__ );
+			$copyPos = $this->dbw->selectField( $dstTable, 'MAX(log_timestamp)', '', __METHOD__ );
 			$maxTsUnix = wfTimestamp( TS_UNIX, $maxTs );
 			$copyPosUnix = wfTimestamp( TS_UNIX, $copyPos );
 
@@ -137,7 +148,7 @@ EOT;
 				$percent = ( $copyPosUnix - $minTsUnix ) / ( $maxTsUnix - $minTsUnix ) * 100;
 			}
 			printf( "%s  %.2f%%\n", $copyPos, $percent );
-			
+
 			# Handle all entries with timestamp equal to $copyPos
 			if ( $copyPos !== null ) {
 				$numRowsCopied += $this->copyExactMatch( $srcTable, $dstTable, $copyPos );
@@ -147,17 +158,17 @@ EOT;
 			if ( $copyPos === null ) {
 				$conds = false;
 			} else {
-				$conds = array( 'log_timestamp > ' . $this->dbw->addQuotes( $copyPos ) );
+				$conds = [ 'log_timestamp > ' . $this->dbw->addQuotes( $copyPos ) ];
 			}
 			$srcRes = $this->dbw->select( $srcTable, '*', $conds, __METHOD__,
-				array( 'LIMIT' => $batchSize, 'ORDER BY' => 'log_timestamp' ) );
+				[ 'LIMIT' => $batchSize, 'ORDER BY' => 'log_timestamp' ] );
 
-			if ( ! $srcRes->numRows() ) {
+			if ( !$srcRes->numRows() ) {
 				# All done
 				break;
 			}
 
-			$batch = array();
+			$batch = [];
 			foreach ( $srcRes as $srcRow ) {
 				$batch[] = (array)$srcRow;
 			}
@@ -171,18 +182,18 @@ EOT;
 
 	function copyExactMatch( $srcTable, $dstTable, $copyPos ) {
 		$numRowsCopied = 0;
-		$srcRes = $this->dbw->select( $srcTable, '*', array( 'log_timestamp' => $copyPos ), __METHOD__ );
-		$dstRes = $this->dbw->select( $dstTable, '*', array( 'log_timestamp' => $copyPos ), __METHOD__ );
+		$srcRes = $this->dbw->select( $srcTable, '*', [ 'log_timestamp' => $copyPos ], __METHOD__ );
+		$dstRes = $this->dbw->select( $dstTable, '*', [ 'log_timestamp' => $copyPos ], __METHOD__ );
 
 		if ( $srcRes->numRows() ) {
 			$srcRow = $srcRes->fetchObject();
 			$srcFields = array_keys( (array)$srcRow );
 			$srcRes->seek( 0 );
-			$dstRowsSeen = array();
+			$dstRowsSeen = [];
 
 			# Make a hashtable of rows that already exist in the destination
 			foreach ( $dstRes as $dstRow ) {
-				$reducedDstRow = array();
+				$reducedDstRow = [];
 				foreach ( $srcFields as $field ) {
 					$reducedDstRow[$field] = $dstRow->$field;
 				}
@@ -199,10 +210,10 @@ EOT;
 				}
 			}
 		}
+
 		return $numRowsCopied;
 	}
 }
 
 $ul = new UpdateLogging;
 $ul->execute();
-

@@ -1,6 +1,6 @@
 <?php
 /**
- * Performs some operations specific to SQLite database backend
+ * Performs some operations specific to SQLite database backend.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,16 +17,25 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * http://www.gnu.org/copyleft/gpl.html
  *
+ * @file
  * @ingroup Maintenance
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+/**
+ * Maintenance script that performs some operations specific to SQLite database backend.
+ *
+ * @ingroup Maintenance
+ */
 class SqliteMaintenance extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Performs some operations specific to SQLite database backend";
-		$this->addOption( 'vacuum', 'Clean up database by removing deleted pages. Decreases database file size' );
+		$this->addDescription( 'Performs some operations specific to SQLite database backend' );
+		$this->addOption(
+			'vacuum',
+			'Clean up database by removing deleted pages. Decreases database file size'
+		);
 		$this->addOption( 'integrity', 'Check database for integrity' );
 		$this->addOption( 'backup-to', 'Backup database to the given file', false, true );
 		$this->addOption( 'check-syntax', 'Check SQL file(s) for syntax errors', false, true );
@@ -35,6 +44,8 @@ class SqliteMaintenance extends Maintenance {
 	/**
 	 * While we use database connection, this simple lie prevents useless --dbpass and
 	 * --dbuser options from appearing in help message for this script.
+	 *
+	 * @return int DB constant
 	 */
 	public function getDbType() {
 		return Maintenance::DB_NONE;
@@ -44,12 +55,15 @@ class SqliteMaintenance extends Maintenance {
 		// Should work even if we use a non-SQLite database
 		if ( $this->hasOption( 'check-syntax' ) ) {
 			$this->checkSyntax();
+
+			return;
 		}
 
-		$this->db = wfGetDB( DB_MASTER );
+		$this->db = $this->getDB( DB_MASTER );
 
 		if ( $this->db->getType() != 'sqlite' ) {
 			$this->error( "This maintenance script requires a SQLite database.\n" );
+
 			return;
 		}
 
@@ -67,15 +81,15 @@ class SqliteMaintenance extends Maintenance {
 	}
 
 	private function vacuum() {
-		$prevSize = filesize( $this->db->mDatabaseFile );
+		$prevSize = filesize( $this->db->getDbFilePath() );
 		if ( $prevSize == 0 ) {
-			$this->error( "Can't vacuum an empty database.\n", true );
+			$this->fatalError( "Can't vacuum an empty database.\n" );
 		}
 
 		$this->output( 'VACUUM: ' );
 		if ( $this->db->query( 'VACUUM' ) ) {
 			clearstatcache();
-			$newSize = filesize( $this->db->mDatabaseFile );
+			$newSize = filesize( $this->db->getDbFilePath() );
 			$this->output( sprintf( "Database size was %d, now %d (%.1f%% reduction).\n",
 				$prevSize, $newSize, ( $prevSize - $newSize ) * 100.0 / $prevSize ) );
 		} else {
@@ -89,6 +103,7 @@ class SqliteMaintenance extends Maintenance {
 
 		if ( !$res || $res->numRows() == 0 ) {
 			$this->error( "Error: integrity check query returned nothing.\n" );
+
 			return;
 		}
 
@@ -100,24 +115,24 @@ class SqliteMaintenance extends Maintenance {
 	private function backup( $fileName ) {
 		$this->output( "Backing up database:\n   Locking..." );
 		$this->db->query( 'BEGIN IMMEDIATE TRANSACTION', __METHOD__ );
-		$ourFile = $this->db->mDatabaseFile;
+		$ourFile = $this->db->getDbFilePath();
 		$this->output( "   Copying database file $ourFile to $fileName... " );
-		wfSuppressWarnings( false );
+		Wikimedia\suppressWarnings();
 		if ( !copy( $ourFile, $fileName ) ) {
 			$err = error_get_last();
 			$this->error( "      {$err['message']}" );
 		}
-		wfSuppressWarnings( true );
+		Wikimedia\restoreWarnings();
 		$this->output( "   Releasing lock...\n" );
 		$this->db->query( 'COMMIT TRANSACTION', __METHOD__ );
 	}
 
 	private function checkSyntax() {
-		if ( !Sqlite::IsPresent() ) {
+		if ( !Sqlite::isPresent() ) {
 			$this->error( "Error: SQLite support not found\n" );
 		}
-		$files = array( $this->getOption( 'check-syntax' ) );
-		$files += $this->mArgs;
+		$files = [ $this->getOption( 'check-syntax' ) ];
+		$files = array_merge( $files, $this->mArgs );
 		$result = Sqlite::checkSqlSyntax( $files );
 		if ( $result === true ) {
 			$this->output( "SQL syntax check: no errors detected.\n" );
@@ -127,5 +142,5 @@ class SqliteMaintenance extends Maintenance {
 	}
 }
 
-$maintClass = "SqliteMaintenance";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = SqliteMaintenance::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

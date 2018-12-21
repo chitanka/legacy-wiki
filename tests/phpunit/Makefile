@@ -1,8 +1,8 @@
-.PHONY: help test phpunit install coverage warning destructive parser noparser safe databaseless list-groups
+.PHONY: help test phpunit coverage warning destructive parser noparser safe databaseless list-groups
 .DEFAULT: warning
 
 SHELL = /bin/sh
-CONFIG_FILE = $(shell pwd)/suite.xml
+CONFIG_FILE = ${PWD}/suite.xml
 PHP = php
 PU = ${PHP} phpunit.php --configuration ${CONFIG_FILE} ${FLAGS}
 
@@ -35,9 +35,6 @@ destructive: phpunit
 phpunit:
 	${PU}
 
-install:
-	./install-phpunit.sh
-
 tap:
 	${PU} --tap
 
@@ -67,14 +64,13 @@ help:
 	#
 	# Targets:
 	#   phpunit (default)   Run all the tests with phpunit
-	#   install             Install PHPUnit from phpunit.de
 	#   tap                 Run the tests individually through Test::Harness's prove(1)
 	#   help                You're looking at it!
 	#   coverage            Run the tests and generates an HTML code coverage report
-	#                       You will need the Xdebug PHP extension for the later.
+	#                       You will need the Xdebug PHP extension for the latter.
 	#   [no]parser          Skip or only run Parser tests
 	#
-	#   list-groups         List availabe Tests groups.
+	#   list-groups         List available Tests groups.
 	#
 	#  Options:
 	#   CONFIG_FILE         Path to a PHPUnit configuration file (default: suite.xml)

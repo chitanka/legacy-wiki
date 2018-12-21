@@ -1,106 +1,244 @@
 <?php
+/**
+ * Representation of a page version.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * http://www.gnu.org/copyleft/gpl.html
+ *
+ * @file
+ */
+
+use MediaWiki\Storage\MutableRevisionRecord;
+use MediaWiki\Storage\RevisionAccessException;
+use MediaWiki\Storage\RevisionFactory;
+use MediaWiki\Storage\RevisionLookup;
+use MediaWiki\Storage\RevisionRecord;
+use MediaWiki\Storage\RevisionStore;
+use MediaWiki\Storage\RevisionStoreRecord;
+use MediaWiki\Storage\SlotRecord;
+use MediaWiki\Storage\SqlBlobStore;
+use Wikimedia\Rdbms\IDatabase;
+use MediaWiki\Linker\LinkTarget;
+use MediaWiki\MediaWikiServices;
+use Wikimedia\Rdbms\ResultWrapper;
+use Wikimedia\Rdbms\FakeResultWrapper;
 
 /**
- * @todo document
+ * @deprecated since 1.31, use RevisionRecord, RevisionStore, and BlobStore instead.
  */
-class Revision {
-	const DELETED_TEXT = 1;
-	const DELETED_COMMENT = 2;
-	const DELETED_USER = 4;
-	const DELETED_RESTRICTED = 8;
-	// Convenience field
-	const SUPPRESSED_USER = 12;
-	// Audience options for Revision::getText()
-	const FOR_PUBLIC = 1;
-	const FOR_THIS_USER = 2;
-	const RAW = 3;
+class Revision implements IDBAccessObject {
+
+	/** @var RevisionRecord */
+	protected $mRecord;
+
+	// Revision deletion constants
+	const DELETED_TEXT = RevisionRecord::DELETED_TEXT;
+	const DELETED_COMMENT = RevisionRecord::DELETED_COMMENT;
+	const DELETED_USER = RevisionRecord::DELETED_USER;
+	const DELETED_RESTRICTED = RevisionRecord::DELETED_RESTRICTED;
+	const SUPPRESSED_USER = RevisionRecord::SUPPRESSED_USER;
+	const SUPPRESSED_ALL = RevisionRecord::SUPPRESSED_ALL;
+
+	// Audience options for accessors
+	const FOR_PUBLIC = RevisionRecord::FOR_PUBLIC;
+	const FOR_THIS_USER = RevisionRecord::FOR_THIS_USER;
+	const RAW = RevisionRecord::RAW;
+
+	const TEXT_CACHE_GROUP = SqlBlobStore::TEXT_CACHE_GROUP;
+
+	/**
+	 * @return RevisionStore
+	 */
+	protected static function getRevisionStore() {
+		return MediaWikiServices::getInstance()->getRevisionStore();
+	}
+
+	/**
+	 * @return RevisionLookup
+	 */
+	protected static function getRevisionLookup() {
+		return MediaWikiServices::getInstance()->getRevisionLookup();
+	}
+
+	/**
+	 * @return RevisionFactory
+	 */
+	protected static function getRevisionFactory() {
+		return MediaWikiServices::getInstance()->getRevisionFactory();
+	}
+
+	/**
+	 * @param bool|string $wiki The ID of the target wiki database. Use false for the local wiki.
+	 *
+	 * @return SqlBlobStore
+	 */
+	protected static function getBlobStore( $wiki = false ) {
+		$store = MediaWikiServices::getInstance()
+			->getBlobStoreFactory()
+			->newSqlBlobStore( $wiki );
+
+		if ( !$store instanceof SqlBlobStore ) {
+			throw new RuntimeException(
+				'The backwards compatibility code in Revision currently requires the BlobStore '
+				. 'service to be an SqlBlobStore instance, but it is a ' . get_class( $store )
+			);
+		}
+
+		return $store;
+	}
 
 	/**
 	 * Load a page revision from a given revision ID number.
 	 * Returns null if no such revision can be found.
 	 *
-	 * @param $id Integer
-	 * @return Revision or null
+	 * $flags include:
+	 *      Revision::READ_LATEST  : Select the data from the master
+	 *      Revision::READ_LOCKING : Select & lock the data from the master
+	 *
+	 * @param int $id
+	 * @param int $flags (optional)
+	 * @return Revision|null
 	 */
-	public static function newFromId( $id ) {
-		return Revision::newFromConds(
-			array( 'page_id=rev_page',
-			       'rev_id' => intval( $id ) ) );
+	public static function newFromId( $id, $flags = 0 ) {
+		$rec = self::getRevisionLookup()->getRevisionById( $id, $flags );
+		return $rec === null ? null : new Revision( $rec, $flags );
 	}
 
 	/**
 	 * Load either the current, or a specified, revision
-	 * that's attached to a given title. If not attached
-	 * to that title, will return null.
+	 * that's attached to a given link target. If not attached
+	 * to that link target, will return null.
 	 *
-	 * @param $title Title
-	 * @param $id Integer
-	 * @return Revision or null
+	 * $flags include:
+	 *      Revision::READ_LATEST  : Select the data from the master
+	 *      Revision::READ_LOCKING : Select & lock the data from the master
+	 *
+	 * @param LinkTarget $linkTarget
+	 * @param int $id (optional)
+	 * @param int $flags Bitfield (optional)
+	 * @return Revision|null
 	 */
-	public static function newFromTitle( $title, $id = 0 ) {
-		$conds = array( 
-			'page_namespace' => $title->getNamespace(), 
-			'page_title' => $title->getDBkey()
-		);
-		if ( $id ) {
-			// Use the specified ID
-			$conds['rev_id'] = $id;
-		} elseif ( wfGetLB()->getServerCount() > 1 ) {
-			// Get the latest revision ID from the master
-			$dbw = wfGetDB( DB_MASTER );
-			$latest = $dbw->selectField( 'page', 'page_latest', $conds, __METHOD__ );
-			if ( $latest === false ) {
-				// Page does not exist
-				return null;
-			}
-			$conds['rev_id'] = $latest;
-		} else {
-			// Use a join to get the latest revision
-			$conds[] = 'rev_id=page_latest';
-		}
-		$conds[] = 'page_id=rev_page';
-		return Revision::newFromConds( $conds );
+	public static function newFromTitle( LinkTarget $linkTarget, $id = 0, $flags = 0 ) {
+		$rec = self::getRevisionLookup()->getRevisionByTitle( $linkTarget, $id, $flags );
+		return $rec === null ? null : new Revision( $rec, $flags );
+	}
+
+	/**
+	 * Load either the current, or a specified, revision
+	 * that's attached to a given page ID.
+	 * Returns null if no such revision can be found.
+	 *
+	 * $flags include:
+	 *      Revision::READ_LATEST  : Select the data from the master (since 1.20)
+	 *      Revision::READ_LOCKING : Select & lock the data from the master
+	 *
+	 * @param int $pageId
+	 * @param int $revId (optional)
+	 * @param int $flags Bitfield (optional)
+	 * @return Revision|null
+	 */
+	public static function newFromPageId( $pageId, $revId = 0, $flags = 0 ) {
+		$rec = self::getRevisionLookup()->getRevisionByPageId( $pageId, $revId, $flags );
+		return $rec === null ? null : new Revision( $rec, $flags );
 	}
 
 	/**
 	 * Make a fake revision object from an archive table row. This is queried
 	 * for permissions or even inserted (as in Special:Undelete)
-	 * @todo Fixme: should be a subclass for RevisionDelete. [TS]
+	 *
+	 * @param object $row
+	 * @param array $overrides
+	 *
+	 * @throws MWException
+	 * @return Revision
 	 */
-	public static function newFromArchiveRow( $row, $overrides = array() ) {
-		$attribs = $overrides + array(
-			'page'       => isset( $row->page_id ) ? $row->page_id : null,
-			'id'         => isset( $row->ar_rev_id ) ? $row->ar_rev_id : null,
-			'comment'    => $row->ar_comment,
-			'user'       => $row->ar_user,
-			'user_text'  => $row->ar_user_text,
-			'timestamp'  => $row->ar_timestamp,
-			'minor_edit' => $row->ar_minor_edit,
-			'text_id'    => isset( $row->ar_text_id ) ? $row->ar_text_id : null,
-			'deleted'    => $row->ar_deleted,
-			'len'        => $row->ar_len);
-		if ( isset( $row->ar_text ) && !$row->ar_text_id ) {
-			// Pre-1.5 ar_text row
-			$attribs['text'] = self::getRevisionText( $row, 'ar_' );
-			if ( $attribs['text'] === false ) {
-				throw new MWException( 'Unable to load text from archive row (possibly bug 22624)' );
+	public static function newFromArchiveRow( $row, $overrides = [] ) {
+		/**
+		 * MCR Migration: https://phabricator.wikimedia.org/T183564
+		 * This method used to overwrite attributes, then passed to Revision::__construct
+		 * RevisionStore::newRevisionFromArchiveRow instead overrides row field names
+		 * So do a conversion here.
+		 */
+		if ( array_key_exists( 'page', $overrides ) ) {
+			$overrides['page_id'] = $overrides['page'];
+			unset( $overrides['page'] );
+		}
+
+		/**
+		 * We require a Title for both the Revision object and the RevisionRecord.
+		 * Below is duplicated logic from RevisionStore::newRevisionFromArchiveRow
+		 * to fetch a title in order pass it into the Revision object.
+		 */
+		$title = null;
+		if ( isset( $overrides['title'] ) ) {
+			if ( !( $overrides['title'] instanceof Title ) ) {
+				throw new MWException( 'title field override must contain a Title object.' );
+			}
+
+			$title = $overrides['title'];
+		}
+		if ( $title !== null ) {
+			if ( isset( $row->ar_namespace ) && isset( $row->ar_title ) ) {
+				$title = Title::makeTitle( $row->ar_namespace, $row->ar_title );
+			} else {
+				throw new InvalidArgumentException(
+					'A Title or ar_namespace and ar_title must be given'
+				);
 			}
 		}
-		return new self( $attribs );
+
+		$rec = self::getRevisionFactory()->newRevisionFromArchiveRow( $row, 0, $title, $overrides );
+		return new Revision( $rec, self::READ_NORMAL, $title );
+	}
+
+	/**
+	 * @since 1.19
+	 *
+	 * MCR migration note: replaced by RevisionStore::newRevisionFromRow(). Note that
+	 * newFromRow() also accepts arrays, while newRevisionFromRow() does not. Instead,
+	 * a MutableRevisionRecord should be constructed directly.
+	 * RevisionStore::newMutableRevisionFromArray() can be used as a temporary replacement,
+	 * but should be avoided.
+	 *
+	 * @param object|array $row
+	 * @return Revision
+	 */
+	public static function newFromRow( $row ) {
+		if ( is_array( $row ) ) {
+			$rec = self::getRevisionFactory()->newMutableRevisionFromArray( $row );
+		} else {
+			$rec = self::getRevisionFactory()->newRevisionFromRow( $row );
+		}
+
+		return new Revision( $rec );
 	}
 
 	/**
 	 * Load a page revision from a given revision ID number.
 	 * Returns null if no such revision can be found.
 	 *
-	 * @param $db DatabaseBase
-	 * @param $id Integer
-	 * @return Revision or null
+	 * @deprecated since 1.31, use RevisionStore::getRevisionById() instead.
+	 *
+	 * @param IDatabase $db
+	 * @param int $id
+	 * @return Revision|null
 	 */
 	public static function loadFromId( $db, $id ) {
-		return Revision::loadFromConds( $db,
-			array( 'page_id=rev_page',
-			       'rev_id' => intval( $id ) ) );
+		wfDeprecated( __METHOD__, '1.31' ); // no known callers
+		$rec = self::getRevisionStore()->loadRevisionFromId( $db, $id );
+		return $rec === null ? null : new Revision( $rec );
 	}
 
 	/**
@@ -108,19 +246,16 @@ class Revision {
 	 * that's attached to a given page. If not attached
 	 * to that page, will return null.
 	 *
-	 * @param $db DatabaseBase
-	 * @param $pageid Integer
-	 * @param $id Integer
-	 * @return Revision or null
+	 * @deprecated since 1.31, use RevisionStore::getRevisionByPageId() instead.
+	 *
+	 * @param IDatabase $db
+	 * @param int $pageid
+	 * @param int $id
+	 * @return Revision|null
 	 */
 	public static function loadFromPageId( $db, $pageid, $id = 0 ) {
-		$conds = array( 'page_id=rev_page','rev_page' => intval( $pageid ), 'page_id'=>intval( $pageid ) );
-		if( $id ) {
-			$conds['rev_id'] = intval( $id );
-		} else {
-			$conds[] = 'rev_id=page_latest';
-		}
-		return Revision::loadFromConds( $db, $conds );
+		$rec = self::getRevisionStore()->loadRevisionFromPageId( $db, $pageid, $id );
+		return $rec === null ? null : new Revision( $rec );
 	}
 
 	/**
@@ -128,23 +263,16 @@ class Revision {
 	 * that's attached to a given page. If not attached
 	 * to that page, will return null.
 	 *
-	 * @param $db DatabaseBase
-	 * @param $title Title
-	 * @param $id Integer
-	 * @return Revision or null
+	 * @deprecated since 1.31, use RevisionStore::getRevisionByTitle() instead.
+	 *
+	 * @param IDatabase $db
+	 * @param Title $title
+	 * @param int $id
+	 * @return Revision|null
 	 */
 	public static function loadFromTitle( $db, $title, $id = 0 ) {
-		if( $id ) {
-			$matchId = intval( $id );
-		} else {
-			$matchId = 'page_latest';
-		}
-		return Revision::loadFromConds(
-			$db,
-			array( "rev_id=$matchId",
-			       'page_id=rev_page',
-			       'page_namespace' => $title->getNamespace(),
-			       'page_title'     => $title->getDBkey() ) );
+		$rec = self::getRevisionStore()->loadRevisionFromTitle( $db, $title, $id );
+		return $rec === null ? null : new Revision( $rec );
 	}
 
 	/**
@@ -152,56 +280,17 @@ class Revision {
 	 * WARNING: Timestamps may in some circumstances not be unique,
 	 * so this isn't the best key to use.
 	 *
-	 * @param $db DatabaseBase
-	 * @param $title Title
-	 * @param $timestamp String
-	 * @return Revision or null
+	 * @deprecated since 1.31, use RevisionStore::getRevisionByTimestamp()
+	 *   or RevisionStore::loadRevisionFromTimestamp() instead.
+	 *
+	 * @param IDatabase $db
+	 * @param Title $title
+	 * @param string $timestamp
+	 * @return Revision|null
 	 */
 	public static function loadFromTimestamp( $db, $title, $timestamp ) {
-		return Revision::loadFromConds(
-			$db,
-			array( 'rev_timestamp'  => $db->timestamp( $timestamp ),
-			       'page_id=rev_page',
-			       'page_namespace' => $title->getNamespace(),
-			       'page_title'     => $title->getDBkey() ) );
-	}
-
-	/**
-	 * Given a set of conditions, fetch a revision.
-	 *
-	 * @param $conditions Array
-	 * @return Revision or null
-	 */
-	public static function newFromConds( $conditions ) {
-		$db = wfGetDB( DB_SLAVE );
-		$row = Revision::loadFromConds( $db, $conditions );
-		if( is_null( $row ) && wfGetLB()->getServerCount() > 1 ) {
-			$dbw = wfGetDB( DB_MASTER );
-			$row = Revision::loadFromConds( $dbw, $conditions );
-		}
-		return $row;
-	}
-
-	/**
-	 * Given a set of conditions, fetch a revision from
-	 * the given database connection.
-	 *
-	 * @param $db DatabaseBase
-	 * @param $conditions Array
-	 * @return Revision or null
-	 */
-	private static function loadFromConds( $db, $conditions ) {
-		$res = Revision::fetchFromConds( $db, $conditions );
-		if( $res ) {
-			$row = $res->fetchObject();
-			$res->free();
-			if( $row ) {
-				$ret = new Revision( $row );
-				return $ret;
-			}
-		}
-		$ret = null;
-		return $ret;
+		$rec = self::getRevisionStore()->loadRevisionFromTimestamp( $db, $title, $timestamp );
+		return $rec === null ? null : new Revision( $rec );
 	}
 
 	/**
@@ -209,563 +298,779 @@ class Revision {
 	 * fetch all of a given page's revisions in turn.
 	 * Each row can be fed to the constructor to get objects.
 	 *
-	 * @param $title Title
+	 * @param LinkTarget $title
 	 * @return ResultWrapper
+	 * @deprecated Since 1.28, no callers in core nor in known extensions. No-op since 1.31.
 	 */
-	public static function fetchRevision( $title ) {
-		return Revision::fetchFromConds(
-			wfGetDB( DB_SLAVE ),
-			array( 'rev_id=page_latest',
-			       'page_namespace' => $title->getNamespace(),
-			       'page_title'     => $title->getDBkey(),
-			       'page_id=rev_page' ) );
+	public static function fetchRevision( LinkTarget $title ) {
+		wfDeprecated( __METHOD__, '1.31' );
+		return new FakeResultWrapper( [] );
 	}
 
 	/**
-	 * Given a set of conditions, return a ResultWrapper
-	 * which will return matching database rows with the
-	 * fields necessary to build Revision objects.
-	 *
-	 * @param $db DatabaseBase
-	 * @param $conditions Array
-	 * @return ResultWrapper
+	 * Return the value of a select() JOIN conds array for the user table.
+	 * This will get user table rows for logged-in users.
+	 * @since 1.19
+	 * @deprecated since 1.31, use RevisionStore::getQueryInfo( [ 'user' ] ) instead.
+	 * @return array
 	 */
-	private static function fetchFromConds( $db, $conditions ) {
-		$fields = self::selectFields();
-		$fields[] = 'page_namespace';
-		$fields[] = 'page_title';
-		$fields[] = 'page_latest';
-		$res = $db->select(
-			array( 'page', 'revision' ),
-			$fields,
-			$conditions,
-			__METHOD__,
-			array( 'LIMIT' => 1 ) );
-		$ret = $db->resultObject( $res );
-		return $ret;
+	public static function userJoinCond() {
+		global $wgActorTableSchemaMigrationStage;
+
+		wfDeprecated( __METHOD__, '1.31' );
+		if ( $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH ) {
+			// If code is using this instead of self::getQueryInfo(), there's
+			// no way the join it's trying to do can work once the old fields
+			// aren't being written anymore.
+			throw new BadMethodCallException(
+				'Cannot use ' . __METHOD__ . ' when $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH'
+			);
+		}
+
+		return [ 'LEFT JOIN', [ 'rev_user != 0', 'user_id = rev_user' ] ];
+	}
+
+	/**
+	 * Return the value of a select() page conds array for the page table.
+	 * This will assure that the revision(s) are not orphaned from live pages.
+	 * @since 1.19
+	 * @deprecated since 1.31, use RevisionStore::getQueryInfo( [ 'page' ] ) instead.
+	 * @return array
+	 */
+	public static function pageJoinCond() {
+		wfDeprecated( __METHOD__, '1.31' );
+		return [ 'INNER JOIN', [ 'page_id = rev_page' ] ];
 	}
 
 	/**
 	 * Return the list of revision fields that should be selected to create
 	 * a new revision.
+	 * @deprecated since 1.31, use RevisionStore::getQueryInfo() instead.
+	 * @return array
 	 */
 	public static function selectFields() {
-		return array(
+		global $wgContentHandlerUseDB, $wgActorTableSchemaMigrationStage;
+
+		if ( $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH ) {
+			// If code is using this instead of self::getQueryInfo(), there's a
+			// decent chance it's going to try to directly access
+			// $row->rev_user or $row->rev_user_text and we can't give it
+			// useful values here once those aren't being written anymore.
+			throw new BadMethodCallException(
+				'Cannot use ' . __METHOD__ . ' when $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH'
+			);
+		}
+
+		wfDeprecated( __METHOD__, '1.31' );
+
+		$fields = [
 			'rev_id',
 			'rev_page',
 			'rev_text_id',
 			'rev_timestamp',
-			'rev_comment',
-			'rev_user_text,'.
+			'rev_user_text',
 			'rev_user',
+			'rev_actor' => 'NULL',
 			'rev_minor_edit',
 			'rev_deleted',
 			'rev_len',
-			'rev_parent_id'
-		);
+			'rev_parent_id',
+			'rev_sha1',
+		];
+
+		$fields += CommentStore::getStore()->getFields( 'rev_comment' );
+
+		if ( $wgContentHandlerUseDB ) {
+			$fields[] = 'rev_content_format';
+			$fields[] = 'rev_content_model';
+		}
+
+		return $fields;
 	}
-	
+
 	/**
-	 * Return the list of text fields that should be selected to read the 
-	 * revision text
+	 * Return the list of revision fields that should be selected to create
+	 * a new revision from an archive row.
+	 * @deprecated since 1.31, use RevisionStore::getArchiveQueryInfo() instead.
+	 * @return array
 	 */
-	static function selectTextFields() {
-		return array(
+	public static function selectArchiveFields() {
+		global $wgContentHandlerUseDB, $wgActorTableSchemaMigrationStage;
+
+		if ( $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH ) {
+			// If code is using this instead of self::getQueryInfo(), there's a
+			// decent chance it's going to try to directly access
+			// $row->ar_user or $row->ar_user_text and we can't give it
+			// useful values here once those aren't being written anymore.
+			throw new BadMethodCallException(
+				'Cannot use ' . __METHOD__ . ' when $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH'
+			);
+		}
+
+		wfDeprecated( __METHOD__, '1.31' );
+
+		$fields = [
+			'ar_id',
+			'ar_page_id',
+			'ar_rev_id',
+			'ar_text_id',
+			'ar_timestamp',
+			'ar_user_text',
+			'ar_user',
+			'ar_actor' => 'NULL',
+			'ar_minor_edit',
+			'ar_deleted',
+			'ar_len',
+			'ar_parent_id',
+			'ar_sha1',
+		];
+
+		$fields += CommentStore::getStore()->getFields( 'ar_comment' );
+
+		if ( $wgContentHandlerUseDB ) {
+			$fields[] = 'ar_content_format';
+			$fields[] = 'ar_content_model';
+		}
+		return $fields;
+	}
+
+	/**
+	 * Return the list of text fields that should be selected to read the
+	 * revision text
+	 * @deprecated since 1.31, use RevisionStore::getQueryInfo( [ 'text' ] ) instead.
+	 * @return array
+	 */
+	public static function selectTextFields() {
+		wfDeprecated( __METHOD__, '1.31' );
+		return [
 			'old_text',
 			'old_flags'
-		);
+		];
 	}
 
 	/**
 	 * Return the list of page fields that should be selected from page table
+	 * @deprecated since 1.31, use RevisionStore::getQueryInfo( [ 'page' ] ) instead.
+	 * @return array
 	 */
-	static function selectPageFields() {
-		return array(
+	public static function selectPageFields() {
+		wfDeprecated( __METHOD__, '1.31' );
+		return [
 			'page_namespace',
 			'page_title',
-			'page_latest'
-		);
+			'page_id',
+			'page_latest',
+			'page_is_redirect',
+			'page_len',
+		];
 	}
 
 	/**
-	 * Constructor
+	 * Return the list of user fields that should be selected from user table
+	 * @deprecated since 1.31, use RevisionStore::getQueryInfo( [ 'user' ] ) instead.
+	 * @return array
+	 */
+	public static function selectUserFields() {
+		wfDeprecated( __METHOD__, '1.31' );
+		return [ 'user_name' ];
+	}
+
+	/**
+	 * Return the tables, fields, and join conditions to be selected to create
+	 * a new revision object.
+	 * @since 1.31
+	 * @deprecated since 1.31, use RevisionStore::getQueryInfo() instead.
+	 * @param array $options Any combination of the following strings
+	 *  - 'page': Join with the page table, and select fields to identify the page
+	 *  - 'user': Join with the user table, and select the user name
+	 *  - 'text': Join with the text table, and select fields to load page text
+	 * @return array With three keys:
+	 *   - tables: (string[]) to include in the `$table` to `IDatabase->select()`
+	 *   - fields: (string[]) to include in the `$vars` to `IDatabase->select()`
+	 *   - joins: (array) to include in the `$join_conds` to `IDatabase->select()`
+	 */
+	public static function getQueryInfo( $options = [] ) {
+		return self::getRevisionStore()->getQueryInfo( $options );
+	}
+
+	/**
+	 * Return the tables, fields, and join conditions to be selected to create
+	 * a new archived revision object.
+	 * @since 1.31
+	 * @deprecated since 1.31, use RevisionStore::getArchiveQueryInfo() instead.
+	 * @return array With three keys:
+	 *   - tables: (string[]) to include in the `$table` to `IDatabase->select()`
+	 *   - fields: (string[]) to include in the `$vars` to `IDatabase->select()`
+	 *   - joins: (array) to include in the `$join_conds` to `IDatabase->select()`
+	 */
+	public static function getArchiveQueryInfo() {
+		return self::getRevisionStore()->getArchiveQueryInfo();
+	}
+
+	/**
+	 * Do a batched query to get the parent revision lengths
 	 *
-	 * @param $row Mixed: either a database row or an array
+	 * @deprecated in 1.31, use RevisionStore::getRevisionSizes instead.
+	 *
+	 * @param IDatabase $db
+	 * @param array $revIds
+	 * @return array
+	 */
+	public static function getParentLengths( $db, array $revIds ) {
+		return self::getRevisionStore()->listRevisionSizes( $db, $revIds );
+	}
+
+	/**
+	 * @param object|array|RevisionRecord $row Either a database row or an array
+	 * @param int $queryFlags
+	 * @param Title|null $title
+	 *
 	 * @access private
 	 */
-	function __construct( $row ) {
-		if( is_object( $row ) ) {
-			$this->mId        = intval( $row->rev_id );
-			$this->mPage      = intval( $row->rev_page );
-			$this->mTextId    = intval( $row->rev_text_id );
-			$this->mComment   =         $row->rev_comment;
-			$this->mUserText  =         $row->rev_user_text;
-			$this->mUser      = intval( $row->rev_user );
-			$this->mMinorEdit = intval( $row->rev_minor_edit );
-			$this->mTimestamp =         $row->rev_timestamp;
-			$this->mDeleted   = intval( $row->rev_deleted );
+	function __construct( $row, $queryFlags = 0, Title $title = null ) {
+		global $wgUser;
 
-			if( !isset( $row->rev_parent_id ) )
-				$this->mParentId = is_null($row->rev_parent_id) ? null : 0;
-			else
-				$this->mParentId  = intval( $row->rev_parent_id );
-
-			if( !isset( $row->rev_len ) || is_null( $row->rev_len ) )
-				$this->mSize = null;
-			else
-				$this->mSize = intval( $row->rev_len );
-
-			if( isset( $row->page_latest ) ) {
-				$this->mCurrent = ( $row->rev_id == $row->page_latest );
-				$this->mTitle = Title::newFromRow( $row );
-			} else {
-				$this->mCurrent = false;
-				$this->mTitle = null;
+		if ( $row instanceof RevisionRecord ) {
+			$this->mRecord = $row;
+		} elseif ( is_array( $row ) ) {
+			// If no user is specified, fall back to using the global user object, to stay
+			// compatible with pre-1.31 behavior.
+			if ( !isset( $row['user'] ) && !isset( $row['user_text'] ) ) {
+				$row['user'] = $wgUser;
 			}
 
-			// Lazy extraction...
-			$this->mText      = null;
-			if( isset( $row->old_text ) ) {
-				$this->mTextRow = $row;
-			} else {
-				// 'text' table row entry will be lazy-loaded
-				$this->mTextRow = null;
-			}
-		} elseif( is_array( $row ) ) {
-			// Build a new revision to be saved...
-			global $wgUser;
-
-			$this->mId        = isset( $row['id']         ) ? intval( $row['id']         ) : null;
-			$this->mPage      = isset( $row['page']       ) ? intval( $row['page']       ) : null;
-			$this->mTextId    = isset( $row['text_id']    ) ? intval( $row['text_id']    ) : null;
-			$this->mUserText  = isset( $row['user_text']  ) ? strval( $row['user_text']  ) : $wgUser->getName();
-			$this->mUser      = isset( $row['user']       ) ? intval( $row['user']       ) : $wgUser->getId();
-			$this->mMinorEdit = isset( $row['minor_edit'] ) ? intval( $row['minor_edit'] ) : 0;
-			$this->mTimestamp = isset( $row['timestamp']  ) ? strval( $row['timestamp']  ) : wfTimestamp( TS_MW );
-			$this->mDeleted   = isset( $row['deleted']    ) ? intval( $row['deleted']    ) : 0;
-			$this->mSize      = isset( $row['len']        ) ? intval( $row['len']        ) : null;
-			$this->mParentId  = isset( $row['parent_id']  ) ? intval( $row['parent_id']  ) : null;
-
-			// Enforce spacing trimming on supplied text
-			$this->mComment   = isset( $row['comment']    ) ?  trim( strval( $row['comment'] ) ) : null;
-			$this->mText      = isset( $row['text']       ) ? rtrim( strval( $row['text']    ) ) : null;
-			$this->mTextRow   = null;
-
-			$this->mTitle     = null; # Load on demand if needed
-			$this->mCurrent   = false;
-			# If we still have no len_size, see it we have the text to figure it out
-			if ( !$this->mSize )
-				$this->mSize      = is_null( $this->mText ) ? null : strlen( $this->mText );
+			$this->mRecord = self::getRevisionFactory()->newMutableRevisionFromArray(
+				$row,
+				$queryFlags,
+				$this->ensureTitle( $row, $queryFlags, $title )
+			);
+		} elseif ( is_object( $row ) ) {
+			$this->mRecord = self::getRevisionFactory()->newRevisionFromRow(
+				$row,
+				$queryFlags,
+				$this->ensureTitle( $row, $queryFlags, $title )
+			);
 		} else {
-			throw new MWException( 'Revision constructor passed invalid row format.' );
+			throw new InvalidArgumentException(
+				'$row must be a row object, an associative array, or a RevisionRecord'
+			);
 		}
-		$this->mUnpatrolled = null;
+	}
+
+	/**
+	 * Make sure we have *some* Title object for use by the constructor.
+	 * For B/C, the constructor shouldn't fail even for a bad page ID or bad revision ID.
+	 *
+	 * @param array|object $row
+	 * @param int $queryFlags
+	 * @param Title|null $title
+	 *
+	 * @return Title $title if not null, or a Title constructed from information in $row.
+	 */
+	private function ensureTitle( $row, $queryFlags, $title = null ) {
+		if ( $title ) {
+			return $title;
+		}
+
+		if ( is_array( $row ) ) {
+			if ( isset( $row['title'] ) ) {
+				if ( !( $row['title'] instanceof Title ) ) {
+					throw new MWException( 'title field must contain a Title object.' );
+				}
+
+				return $row['title'];
+			}
+
+			$pageId = isset( $row['page'] ) ? $row['page'] : 0;
+			$revId = isset( $row['id'] ) ? $row['id'] : 0;
+		} else {
+			$pageId = isset( $row->rev_page ) ? $row->rev_page : 0;
+			$revId = isset( $row->rev_id ) ? $row->rev_id : 0;
+		}
+
+		try {
+			$title = self::getRevisionStore()->getTitle( $pageId, $revId, $queryFlags );
+		} catch ( RevisionAccessException $ex ) {
+			// construct a dummy title!
+			wfLogWarning( __METHOD__ . ': ' . $ex->getMessage() );
+
+			// NOTE: this Title will only be used inside RevisionRecord
+			$title = Title::makeTitleSafe( NS_SPECIAL, "Badtitle/ID=$pageId" );
+			$title->resetArticleID( $pageId );
+		}
+
+		return $title;
+	}
+
+	/**
+	 * @return RevisionRecord
+	 */
+	public function getRevisionRecord() {
+		return $this->mRecord;
 	}
 
 	/**
 	 * Get revision ID
 	 *
-	 * @return Integer
+	 * @return int|null
 	 */
 	public function getId() {
-		return $this->mId;
+		return $this->mRecord->getId();
 	}
 
 	/**
-	 * Get text row ID
+	 * Set the revision ID
 	 *
-	 * @return Integer
+	 * This should only be used for proposed revisions that turn out to be null edits.
+	 *
+	 * @note Only supported on Revisions that were constructed based on associative arrays,
+	 *       since they are mutable.
+	 *
+	 * @since 1.19
+	 * @param int|string $id
+	 * @throws MWException
+	 */
+	public function setId( $id ) {
+		if ( $this->mRecord instanceof MutableRevisionRecord ) {
+			$this->mRecord->setId( intval( $id ) );
+		} else {
+			throw new MWException( __METHOD__ . ' is not supported on this instance' );
+		}
+	}
+
+	/**
+	 * Set the user ID/name
+	 *
+	 * This should only be used for proposed revisions that turn out to be null edits
+	 *
+	 * @note Only supported on Revisions that were constructed based on associative arrays,
+	 *       since they are mutable.
+	 *
+	 * @since 1.28
+	 * @deprecated since 1.31, please reuse old Revision object
+	 * @param int $id User ID
+	 * @param string $name User name
+	 * @throws MWException
+	 */
+	public function setUserIdAndName( $id, $name ) {
+		if ( $this->mRecord instanceof MutableRevisionRecord ) {
+			$user = User::newFromAnyId( intval( $id ), $name, null );
+			$this->mRecord->setUser( $user );
+		} else {
+			throw new MWException( __METHOD__ . ' is not supported on this instance' );
+		}
+	}
+
+	/**
+	 * @return SlotRecord
+	 */
+	private function getMainSlotRaw() {
+		return $this->mRecord->getSlot( 'main', RevisionRecord::RAW );
+	}
+
+	/**
+	 * Get the ID of the row of the text table that contains the content of the
+	 * revision's main slot, if that content is stored in the text table.
+	 *
+	 * If the content is stored elsewhere, this returns null.
+	 *
+	 * @deprecated since 1.31, use RevisionRecord()->getSlot()->getContentAddress() to
+	 * get that actual address that can be used with BlobStore::getBlob(); or use
+	 * RevisionRecord::hasSameContent() to check if two revisions have the same content.
+	 *
+	 * @return int|null
 	 */
 	public function getTextId() {
-		return $this->mTextId;
+		$slot = $this->getMainSlotRaw();
+		return $slot->hasAddress()
+			? self::getBlobStore()->getTextIdFromAddress( $slot->getAddress() )
+			: null;
 	}
 
 	/**
 	 * Get parent revision ID (the original previous page revision)
 	 *
-	 * @return Integer
+	 * @return int|null The ID of the parent revision. 0 indicates that there is no
+	 * parent revision. Null indicates that the parent revision is not known.
 	 */
 	public function getParentId() {
-		return $this->mParentId;
+		return $this->mRecord->getParentId();
 	}
 
 	/**
 	 * Returns the length of the text in this revision, or null if unknown.
 	 *
-	 * @return Integer
+	 * @return int|null
 	 */
 	public function getSize() {
-		return $this->mSize;
+		try {
+			return $this->mRecord->getSize();
+		} catch ( RevisionAccessException $ex ) {
+			return null;
+		}
+	}
+
+	/**
+	 * Returns the base36 sha1 of the content in this revision, or null if unknown.
+	 *
+	 * @return string|null
+	 */
+	public function getSha1() {
+		try {
+			return $this->mRecord->getSha1();
+		} catch ( RevisionAccessException $ex ) {
+			return null;
+		}
 	}
 
 	/**
 	 * Returns the title of the page associated with this entry.
+	 * Since 1.31, this will never return null.
+	 *
+	 * Will do a query, when title is not set and id is given.
 	 *
 	 * @return Title
 	 */
 	public function getTitle() {
-		if( isset( $this->mTitle ) ) {
-			return $this->mTitle;
-		}
-		$dbr = wfGetDB( DB_SLAVE );
-		$row = $dbr->selectRow(
-			array( 'page', 'revision' ),
-			array( 'page_namespace', 'page_title' ),
-			array( 'page_id=rev_page',
-			       'rev_id' => $this->mId ),
-			'Revision::getTitle' );
-		if( $row ) {
-			$this->mTitle = Title::makeTitle( $row->page_namespace,
-			                                  $row->page_title );
-		}
-		return $this->mTitle;
+		$linkTarget = $this->mRecord->getPageAsLinkTarget();
+		return Title::newFromLinkTarget( $linkTarget );
 	}
 
 	/**
 	 * Set the title of the revision
 	 *
-	 * @param $title Title
+	 * @deprecated: since 1.31, this is now a noop. Pass the Title to the constructor instead.
+	 *
+	 * @param Title $title
 	 */
 	public function setTitle( $title ) {
-		$this->mTitle = $title;
+		if ( !$title->equals( $this->getTitle() ) ) {
+			throw new InvalidArgumentException(
+				$title->getPrefixedText()
+					. ' is not the same as '
+					. $this->mRecord->getPageAsLinkTarget()->__toString()
+			);
+		}
 	}
 
 	/**
 	 * Get the page ID
 	 *
-	 * @return Integer
+	 * @return int|null
 	 */
 	public function getPage() {
-		return $this->mPage;
+		return $this->mRecord->getPageId();
 	}
 
 	/**
 	 * Fetch revision's user id if it's available to the specified audience.
-	 * If the specified audience does not have access to it, zero will be 
+	 * If the specified audience does not have access to it, zero will be
 	 * returned.
 	 *
-	 * @param $audience Integer: one of:
-	 *      Revision::FOR_PUBLIC       to be displayed to all users
-	 *      Revision::FOR_THIS_USER    to be displayed to $wgUser
-	 *      Revision::RAW              get the ID regardless of permissions
-	 *
-	 *
-	 * @return Integer
+	 * @param int $audience One of:
+	 *   Revision::FOR_PUBLIC       to be displayed to all users
+	 *   Revision::FOR_THIS_USER    to be displayed to the given user
+	 *   Revision::RAW              get the ID regardless of permissions
+	 * @param User|null $user User object to check for, only if FOR_THIS_USER is passed
+	 *   to the $audience parameter
+	 * @return int
 	 */
-	public function getUser( $audience = self::FOR_PUBLIC ) {
-		if( $audience == self::FOR_PUBLIC && $this->isDeleted( self::DELETED_USER ) ) {
-			return 0;
-		} elseif( $audience == self::FOR_THIS_USER && !$this->userCan( self::DELETED_USER ) ) {
-			return 0;
-		} else {
-			return $this->mUser;
+	public function getUser( $audience = self::FOR_PUBLIC, User $user = null ) {
+		global $wgUser;
+
+		if ( $audience === self::FOR_THIS_USER && !$user ) {
+			$user = $wgUser;
 		}
+
+		$user = $this->mRecord->getUser( $audience, $user );
+		return $user ? $user->getId() : 0;
 	}
 
 	/**
 	 * Fetch revision's user id without regard for the current user's permissions
 	 *
-	 * @return String
+	 * @return int
+	 * @deprecated since 1.25, use getUser( Revision::RAW )
 	 */
 	public function getRawUser() {
-		return $this->mUser;
+		wfDeprecated( __METHOD__, '1.25' );
+		return $this->getUser( self::RAW );
 	}
 
 	/**
 	 * Fetch revision's username if it's available to the specified audience.
-	 * If the specified audience does not have access to the username, an 
+	 * If the specified audience does not have access to the username, an
 	 * empty string will be returned.
 	 *
-	 * @param $audience Integer: one of:
-	 *      Revision::FOR_PUBLIC       to be displayed to all users
-	 *      Revision::FOR_THIS_USER    to be displayed to $wgUser
-	 *      Revision::RAW              get the text regardless of permissions
-	 *
+	 * @param int $audience One of:
+	 *   Revision::FOR_PUBLIC       to be displayed to all users
+	 *   Revision::FOR_THIS_USER    to be displayed to the given user
+	 *   Revision::RAW              get the text regardless of permissions
+	 * @param User|null $user User object to check for, only if FOR_THIS_USER is passed
+	 *   to the $audience parameter
 	 * @return string
 	 */
-	public function getUserText( $audience = self::FOR_PUBLIC ) {
-		if( $audience == self::FOR_PUBLIC && $this->isDeleted( self::DELETED_USER ) ) {
-			return '';
-		} elseif( $audience == self::FOR_THIS_USER && !$this->userCan( self::DELETED_USER ) ) {
-			return '';
-		} else {
-			return $this->mUserText;
+	public function getUserText( $audience = self::FOR_PUBLIC, User $user = null ) {
+		global $wgUser;
+
+		if ( $audience === self::FOR_THIS_USER && !$user ) {
+			$user = $wgUser;
 		}
+
+		$user = $this->mRecord->getUser( $audience, $user );
+		return $user ? $user->getName() : '';
 	}
 
 	/**
 	 * Fetch revision's username without regard for view restrictions
 	 *
-	 * @return String
+	 * @return string
+	 * @deprecated since 1.25, use getUserText( Revision::RAW )
 	 */
 	public function getRawUserText() {
-		return $this->mUserText;
+		wfDeprecated( __METHOD__, '1.25' );
+		return $this->getUserText( self::RAW );
 	}
 
 	/**
 	 * Fetch revision comment if it's available to the specified audience.
-	 * If the specified audience does not have access to the comment, an 
+	 * If the specified audience does not have access to the comment, an
 	 * empty string will be returned.
 	 *
-	 * @param $audience Integer: one of:
-	 *      Revision::FOR_PUBLIC       to be displayed to all users
-	 *      Revision::FOR_THIS_USER    to be displayed to $wgUser
-	 *      Revision::RAW              get the text regardless of permissions
-	 *
-	 * @return String
+	 * @param int $audience One of:
+	 *   Revision::FOR_PUBLIC       to be displayed to all users
+	 *   Revision::FOR_THIS_USER    to be displayed to the given user
+	 *   Revision::RAW              get the text regardless of permissions
+	 * @param User|null $user User object to check for, only if FOR_THIS_USER is passed
+	 *   to the $audience parameter
+	 * @return string
 	 */
-	function getComment( $audience = self::FOR_PUBLIC ) {
-		if( $audience == self::FOR_PUBLIC && $this->isDeleted( self::DELETED_COMMENT ) ) {
-			return '';
-		} elseif( $audience == self::FOR_THIS_USER && !$this->userCan( self::DELETED_COMMENT ) ) {
-			return '';
-		} else {
-			return $this->mComment;
+	function getComment( $audience = self::FOR_PUBLIC, User $user = null ) {
+		global $wgUser;
+
+		if ( $audience === self::FOR_THIS_USER && !$user ) {
+			$user = $wgUser;
 		}
+
+		$comment = $this->mRecord->getComment( $audience, $user );
+		return $comment === null ? null : $comment->text;
 	}
 
 	/**
 	 * Fetch revision comment without regard for the current user's permissions
 	 *
-	 * @return String
+	 * @return string
+	 * @deprecated since 1.25, use getComment( Revision::RAW )
 	 */
 	public function getRawComment() {
-		return $this->mComment;
+		wfDeprecated( __METHOD__, '1.25' );
+		return $this->getComment( self::RAW );
 	}
 
 	/**
-	 * @return Boolean
+	 * @return bool
 	 */
 	public function isMinor() {
-		return (bool)$this->mMinorEdit;
-	}
-	
-	/**
-	 * @return Integer rcid of the unpatrolled row, zero if there isn't one
-	 */
-	public function isUnpatrolled() {
-		if( $this->mUnpatrolled !== null ) {
-			return $this->mUnpatrolled;
-		}
-		$dbr = wfGetDB( DB_SLAVE );
-		$this->mUnpatrolled = $dbr->selectField( 'recentchanges',
-			'rc_id',
-			array( // Add redundant user,timestamp condition so we can use the existing index
-				'rc_user_text'  => $this->getRawUserText(),
-				'rc_timestamp'  => $dbr->timestamp( $this->getTimestamp() ),
-				'rc_this_oldid' => $this->getId(),
-				'rc_patrolled'  => 0
-			),
-			__METHOD__
-		);
-		return (int)$this->mUnpatrolled;
+		return $this->mRecord->isMinor();
 	}
 
 	/**
-	 * int $field one of DELETED_* bitfield constants
+	 * @return int Rcid of the unpatrolled row, zero if there isn't one
+	 */
+	public function isUnpatrolled() {
+		return self::getRevisionStore()->getRcIdIfUnpatrolled( $this->mRecord );
+	}
+
+	/**
+	 * Get the RC object belonging to the current revision, if there's one
 	 *
-	 * @return Boolean
+	 * @param int $flags (optional) $flags include:
+	 *      Revision::READ_LATEST  : Select the data from the master
+	 *
+	 * @since 1.22
+	 * @return RecentChange|null
+	 */
+	public function getRecentChange( $flags = 0 ) {
+		return self::getRevisionStore()->getRecentChange( $this->mRecord, $flags );
+	}
+
+	/**
+	 * @param int $field One of DELETED_* bitfield constants
+	 *
+	 * @return bool
 	 */
 	public function isDeleted( $field ) {
-		return ( $this->mDeleted & $field ) == $field;
+		return $this->mRecord->isDeleted( $field );
 	}
 
 	/**
 	 * Get the deletion bitfield of the revision
+	 *
+	 * @return int
 	 */
 	public function getVisibility() {
-		return (int)$this->mDeleted;
+		return $this->mRecord->getVisibility();
 	}
 
 	/**
-	 * Fetch revision text if it's available to the specified audience.
-	 * If the specified audience does not have the ability to view this 
-	 * revision, an empty string will be returned.
+	 * Fetch revision content if it's available to the specified audience.
+	 * If the specified audience does not have the ability to view this
+	 * revision, or the content could not be loaded, null will be returned.
 	 *
-	 * @param $audience Integer: one of:
-	 *      Revision::FOR_PUBLIC       to be displayed to all users
-	 *      Revision::FOR_THIS_USER    to be displayed to $wgUser
-	 *      Revision::RAW              get the text regardless of permissions
-	 *
-	 * @return String
+	 * @param int $audience One of:
+	 *   Revision::FOR_PUBLIC       to be displayed to all users
+	 *   Revision::FOR_THIS_USER    to be displayed to $user
+	 *   Revision::RAW              get the text regardless of permissions
+	 * @param User $user User object to check for, only if FOR_THIS_USER is passed
+	 *   to the $audience parameter
+	 * @since 1.21
+	 * @return Content|null
 	 */
-	public function getText( $audience = self::FOR_PUBLIC ) {
-		if( $audience == self::FOR_PUBLIC && $this->isDeleted( self::DELETED_TEXT ) ) {
-			return '';
-		} elseif( $audience == self::FOR_THIS_USER && !$this->userCan( self::DELETED_TEXT ) ) {
-			return '';
-		} else {
-			return $this->getRawText();
+	public function getContent( $audience = self::FOR_PUBLIC, User $user = null ) {
+		global $wgUser;
+
+		if ( $audience === self::FOR_THIS_USER && !$user ) {
+			$user = $wgUser;
+		}
+
+		try {
+			return $this->mRecord->getContent( 'main', $audience, $user );
+		}
+		catch ( RevisionAccessException $e ) {
+			return null;
 		}
 	}
 
 	/**
-	 * Alias for getText(Revision::FOR_THIS_USER)
+	 * Get original serialized data (without checking view restrictions)
 	 *
-	 * @deprecated since 1.17
-	 * @return String
+	 * @since 1.21
+	 * @deprecated since 1.31, use BlobStore::getBlob instead.
+	 *
+	 * @return string
 	 */
-	public function revText() {
-		wfDeprecated( __METHOD__ );
-		return $this->getText( self::FOR_THIS_USER );
+	public function getSerializedData() {
+		$slot = $this->getMainSlotRaw();
+		return $slot->getContent()->serialize();
 	}
 
 	/**
-	 * Fetch revision text without regard for view restrictions
+	 * Returns the content model for the main slot of this revision.
 	 *
-	 * @return String
+	 * If no content model was stored in the database, the default content model for the title is
+	 * used to determine the content model to use. If no title is know, CONTENT_MODEL_WIKITEXT
+	 * is used as a last resort.
+	 *
+	 * @todo: drop this, with MCR, there no longer is a single model associated with a revision.
+	 *
+	 * @return string The content model id associated with this revision,
+	 *     see the CONTENT_MODEL_XXX constants.
 	 */
-	public function getRawText() {
-		if( is_null( $this->mText ) ) {
-			// Revision text is immutable. Load on demand:
-			$this->mText = $this->loadText();
+	public function getContentModel() {
+		return $this->getMainSlotRaw()->getModel();
+	}
+
+	/**
+	 * Returns the content format for the main slot of this revision.
+	 *
+	 * If no content format was stored in the database, the default format for this
+	 * revision's content model is returned.
+	 *
+	 * @todo: drop this, the format is irrelevant to the revision!
+	 *
+	 * @return string The content format id associated with this revision,
+	 *     see the CONTENT_FORMAT_XXX constants.
+	 */
+	public function getContentFormat() {
+		$format = $this->getMainSlotRaw()->getFormat();
+
+		if ( $format === null ) {
+			// if no format was stored along with the blob, fall back to default format
+			$format = $this->getContentHandler()->getDefaultFormat();
 		}
-		return $this->mText;
+
+		return $format;
 	}
 
 	/**
-	 * @return String
+	 * Returns the content handler appropriate for this revision's content model.
+	 *
+	 * @throws MWException
+	 * @return ContentHandler
+	 */
+	public function getContentHandler() {
+		return ContentHandler::getForModelID( $this->getContentModel() );
+	}
+
+	/**
+	 * @return string
 	 */
 	public function getTimestamp() {
-		return wfTimestamp( TS_MW, $this->mTimestamp );
+		return $this->mRecord->getTimestamp();
 	}
 
 	/**
-	 * @return Boolean
+	 * @return bool
 	 */
 	public function isCurrent() {
-		return $this->mCurrent;
+		return ( $this->mRecord instanceof RevisionStoreRecord ) && $this->mRecord->isCurrent();
 	}
 
 	/**
 	 * Get previous revision for this title
 	 *
-	 * @return Revision or null
+	 * @return Revision|null
 	 */
 	public function getPrevious() {
-		if( $this->getTitle() ) {
-			$prev = $this->getTitle()->getPreviousRevisionID( $this->getId() );
-			if( $prev ) {
-				return Revision::newFromTitle( $this->getTitle(), $prev );
-			}
-		}
-		return null;
+		$title = $this->getTitle();
+		$rec = self::getRevisionLookup()->getPreviousRevision( $this->mRecord, $title );
+		return $rec === null ? null : new Revision( $rec, self::READ_NORMAL, $title );
 	}
 
 	/**
 	 * Get next revision for this title
 	 *
-	 * @return Revision or null
+	 * @return Revision|null
 	 */
 	public function getNext() {
-		if( $this->getTitle() ) {
-			$next = $this->getTitle()->getNextRevisionID( $this->getId() );
-			if ( $next ) {
-				return Revision::newFromTitle( $this->getTitle(), $next );
-			}
-		}
-		return null;
+		$title = $this->getTitle();
+		$rec = self::getRevisionLookup()->getNextRevision( $this->mRecord, $title );
+		return $rec === null ? null : new Revision( $rec, self::READ_NORMAL, $title );
 	}
 
 	/**
-	 * Get previous revision Id for this page_id
-	 * This is used to populate rev_parent_id on save
+	 * Get revision text associated with an old or archive row
 	 *
-	 * @param $db DatabaseBase
-	 * @return Integer
+	 * Both the flags and the text field must be included. Including the old_id
+	 * field will activate cache usage as long as the $wiki parameter is not set.
+	 *
+	 * @param stdClass $row The text data
+	 * @param string $prefix Table prefix (default 'old_')
+	 * @param string|bool $wiki The name of the wiki to load the revision text from
+	 *   (same as the the wiki $row was loaded from) or false to indicate the local
+	 *   wiki (this is the default). Otherwise, it must be a symbolic wiki database
+	 *   identifier as understood by the LoadBalancer class.
+	 * @return string|false Text the text requested or false on failure
 	 */
-	private function getPreviousRevisionId( $db ) {
-		if( is_null( $this->mPage ) ) {
-			return 0;
-		}
-		# Use page_latest if ID is not given
-		if( !$this->mId ) {
-			$prevId = $db->selectField( 'page', 'page_latest',
-				array( 'page_id' => $this->mPage ),
-				__METHOD__ );
-		} else {
-			$prevId = $db->selectField( 'revision', 'rev_id',
-				array( 'rev_page' => $this->mPage, 'rev_id < ' . $this->mId ),
-				__METHOD__,
-				array( 'ORDER BY' => 'rev_id DESC' ) );
-		}
-		return intval( $prevId );
-	}
-
-	/**
-	  * Get revision text associated with an old or archive row
-	  * $row is usually an object from wfFetchRow(), both the flags and the text
-	  * field must be included
-	  *
-	  * @param $row Object: the text data
-	  * @param $prefix String: table prefix (default 'old_')
-	  * @return String: text the text requested or false on failure
-	  */
-	public static function getRevisionText( $row, $prefix = 'old_' ) {
-		wfProfileIn( __METHOD__ );
-
-		# Get data
+	public static function getRevisionText( $row, $prefix = 'old_', $wiki = false ) {
 		$textField = $prefix . 'text';
 		$flagsField = $prefix . 'flags';
 
-		if( isset( $row->$flagsField ) ) {
+		if ( isset( $row->$flagsField ) ) {
 			$flags = explode( ',', $row->$flagsField );
 		} else {
-			$flags = array();
+			$flags = [];
 		}
 
-		if( isset( $row->$textField ) ) {
+		if ( isset( $row->$textField ) ) {
 			$text = $row->$textField;
 		} else {
-			wfProfileOut( __METHOD__ );
 			return false;
 		}
 
-		# Use external methods for external objects, text in table is URL-only then
-		if ( in_array( 'external', $flags ) ) {
-			$url = $text;
-			@list(/* $proto */, $path ) = explode( '://', $url, 2 );
-			if( $path == '' ) {
-				wfProfileOut( __METHOD__ );
-				return false;
-			}
-			$text = ExternalStore::fetchFromURL( $url );
-		}
+		$cacheKey = isset( $row->old_id ) ? ( 'tt:' . $row->old_id ) : null;
 
-		// If the text was fetched without an error, convert it
-		if ( $text !== false ) {
-			if( in_array( 'gzip', $flags ) ) {
-				# Deal with optional compression of archived pages.
-				# This can be done periodically via maintenance/compressOld.php, and
-				# as pages are saved if $wgCompressRevisions is set.
-				$text = gzinflate( $text );
-			}
-
-			if( in_array( 'object', $flags ) ) {
-				# Generic compressed storage
-				$obj = unserialize( $text );
-				if ( !is_object( $obj ) ) {
-					// Invalid object
-					wfProfileOut( __METHOD__ );
-					return false;
-				}
-				$text = $obj->getText();
-			}
-
-			global $wgLegacyEncoding;
-			if( $text !== false && $wgLegacyEncoding 
-				&& !in_array( 'utf-8', $flags ) && !in_array( 'utf8', $flags ) ) 
-			{
-				# Old revisions kept around in a legacy encoding?
-				# Upconvert on demand.
-				# ("utf8" checked for compatibility with some broken
-				#  conversion scripts 2008-12-30)
-				global $wgContLang;
-				$text = $wgContLang->iconv( $wgLegacyEncoding, 'UTF-8', $text );
-			}
-		}
-		wfProfileOut( __METHOD__ );
-		return $text;
+		return self::getBlobStore( $wiki )->expandBlob( $text, $flags, $cacheKey );
 	}
 
 	/**
@@ -775,158 +1080,65 @@ class Revision {
 	 * data is compressed, and 'utf-8' if we're saving in UTF-8
 	 * mode.
 	 *
-	 * @param $text Mixed: reference to a text
-	 * @return String
+	 * @param mixed &$text Reference to a text
+	 * @return string
 	 */
 	public static function compressRevisionText( &$text ) {
-		global $wgCompressRevisions;
-		$flags = array();
+		return self::getBlobStore()->compressData( $text );
+	}
 
-		# Revisions not marked this way will be converted
-		# on load if $wgLegacyCharset is set in the future.
-		$flags[] = 'utf-8';
-
-		if( $wgCompressRevisions ) {
-			if( function_exists( 'gzdeflate' ) ) {
-				$text = gzdeflate( $text );
-				$flags[] = 'gzip';
-			} else {
-				wfDebug( "Revision::compressRevisionText() -- no zlib support, not compressing\n" );
-			}
-		}
-		return implode( ',', $flags );
+	/**
+	 * Re-converts revision text according to it's flags.
+	 *
+	 * @param mixed $text Reference to a text
+	 * @param array $flags Compression flags
+	 * @return string|bool Decompressed text, or false on failure
+	 */
+	public static function decompressRevisionText( $text, $flags ) {
+		return self::getBlobStore()->decompressData( $text, $flags );
 	}
 
 	/**
 	 * Insert a new revision into the database, returning the new revision ID
 	 * number on success and dies horribly on failure.
 	 *
-	 * @param $dbw DatabaseBase: (master connection)
-	 * @return Integer
+	 * @param IDatabase $dbw (master connection)
+	 * @throws MWException
+	 * @return int The revision ID
 	 */
 	public function insertOn( $dbw ) {
-		global $wgDefaultExternalStore;
+		global $wgUser;
 
-		wfProfileIn( __METHOD__ );
+		// Note that $this->mRecord->getId() will typically return null here, but not always,
+		// e.g. not when restoring a revision.
 
-		$data = $this->mText;
-		$flags = Revision::compressRevisionText( $data );
-
-		# Write to external storage if required
-		if( $wgDefaultExternalStore ) {
-			// Store and get the URL
-			$data = ExternalStore::insertToDefault( $data );
-			if( !$data ) {
-				throw new MWException( "Unable to store text to external storage" );
+		if ( $this->mRecord->getUser( RevisionRecord::RAW ) === null ) {
+			if ( $this->mRecord instanceof MutableRevisionRecord ) {
+				$this->mRecord->setUser( $wgUser );
+			} else {
+				throw new MWException( 'Cannot insert revision with no associated user.' );
 			}
-			if( $flags ) {
-				$flags .= ',';
-			}
-			$flags .= 'external';
 		}
 
-		# Record the text (or external storage URL) to the text table
-		if( !isset( $this->mTextId ) ) {
-			$old_id = $dbw->nextSequenceValue( 'text_old_id_seq' );
-			$dbw->insert( 'text',
-				array(
-					'old_id'    => $old_id,
-					'old_text'  => $data,
-					'old_flags' => $flags,
-				), __METHOD__
-			);
-			$this->mTextId = $dbw->insertId();
-		}
+		$rec = self::getRevisionStore()->insertRevisionOn( $this->mRecord, $dbw );
 
-		if ( $this->mComment === null ) $this->mComment = "";
+		$this->mRecord = $rec;
 
-		# Record the edit in revisions
-		$rev_id = isset( $this->mId )
-			? $this->mId
-			: $dbw->nextSequenceValue( 'revision_rev_id_seq' );
-		$dbw->insert( 'revision',
-			array(
-				'rev_id'         => $rev_id,
-				'rev_page'       => $this->mPage,
-				'rev_text_id'    => $this->mTextId,
-				'rev_comment'    => $this->mComment,
-				'rev_minor_edit' => $this->mMinorEdit ? 1 : 0,
-				'rev_user'       => $this->mUser,
-				'rev_user_text'  => $this->mUserText,
-				'rev_timestamp'  => $dbw->timestamp( $this->mTimestamp ),
-				'rev_deleted'    => $this->mDeleted,
-				'rev_len'        => $this->mSize,
-				'rev_parent_id'  => is_null($this->mParentId) ?
-					$this->getPreviousRevisionId( $dbw ) : $this->mParentId
-			), __METHOD__
-		);
+		// Avoid PHP 7.1 warning of passing $this by reference
+		$revision = $this;
+		// TODO: hard-deprecate in 1.32 (or even 1.31?)
+		Hooks::run( 'RevisionInsertComplete', [ &$revision, null, null ] );
 
-		$this->mId = !is_null( $rev_id ) ? $rev_id : $dbw->insertId();
-
-		wfRunHooks( 'RevisionInsertComplete', array( &$this, $data, $flags ) );
-
-		wfProfileOut( __METHOD__ );
-		return $this->mId;
+		return $rec->getId();
 	}
 
 	/**
-	 * Lazy-load the revision's text.
-	 * Currently hardcoded to the 'text' table storage engine.
-	 *
-	 * @return String
+	 * Get the base 36 SHA-1 value for a string of text
+	 * @param string $text
+	 * @return string
 	 */
-	protected function loadText() {
-		wfProfileIn( __METHOD__ );
-
-		// Caching may be beneficial for massive use of external storage
-		global $wgRevisionCacheExpiry, $wgMemc;
-		$textId = $this->getTextId();
-		$key = wfMemcKey( 'revisiontext', 'textid', $textId );
-		if( $wgRevisionCacheExpiry ) {
-			$text = $wgMemc->get( $key );
-			if( is_string( $text ) ) {
-				wfDebug( __METHOD__ . ": got id $textId from cache\n" );
-				wfProfileOut( __METHOD__ );
-				return $text;
-			}
-		}
-
-		// If we kept data for lazy extraction, use it now...
-		if ( isset( $this->mTextRow ) ) {
-			$row = $this->mTextRow;
-			$this->mTextRow = null;
-		} else {
-			$row = null;
-		}
-
-		if( !$row ) {
-			// Text data is immutable; check slaves first.
-			$dbr = wfGetDB( DB_SLAVE );
-			$row = $dbr->selectRow( 'text',
-				array( 'old_text', 'old_flags' ),
-				array( 'old_id' => $this->getTextId() ),
-				__METHOD__ );
-		}
-
-		if( !$row && wfGetLB()->getServerCount() > 1 ) {
-			// Possible slave lag!
-			$dbw = wfGetDB( DB_MASTER );
-			$row = $dbw->selectRow( 'text',
-				array( 'old_text', 'old_flags' ),
-				array( 'old_id' => $this->getTextId() ),
-				__METHOD__ );
-		}
-
-		$text = self::getRevisionText( $row );
-
-		# No negative caching -- negative hits on text rows may be due to corrupted slave servers
-		if( $wgRevisionCacheExpiry && $text !== false ) {
-			$wgMemc->set( $key, $text, $wgRevisionCacheExpiry );
-		}
-
-		wfProfileOut( __METHOD__ );
-
-		return $text;
+	public static function base36Sha1( $text ) {
+		return SlotRecord::base36Sha1( $text );
 	}
 
 	/**
@@ -937,52 +1149,43 @@ class Revision {
 	 * Such revisions can for instance identify page rename
 	 * operations and other such meta-modifications.
 	 *
-	 * @param $dbw DatabaseBase
-	 * @param $pageId Integer: ID number of the page to read from
-	 * @param $summary String: revision's summary
-	 * @param $minor Boolean: whether the revision should be considered as minor
-	 * @return Revision|null on error
+	 * @param IDatabase $dbw
+	 * @param int $pageId ID number of the page to read from
+	 * @param string $summary Revision's summary
+	 * @param bool $minor Whether the revision should be considered as minor
+	 * @param User|null $user User object to use or null for $wgUser
+	 * @return Revision|null Revision or null on error
 	 */
-	public static function newNullRevision( $dbw, $pageId, $summary, $minor ) {
-		wfProfileIn( __METHOD__ );
-
-		$current = $dbw->selectRow(
-			array( 'page', 'revision' ),
-			array( 'page_latest', 'rev_text_id', 'rev_len' ),
-			array(
-				'page_id' => $pageId,
-				'page_latest=rev_id',
-				),
-			__METHOD__ );
-
-		if( $current ) {
-			$revision = new Revision( array(
-				'page'       => $pageId,
-				'comment'    => $summary,
-				'minor_edit' => $minor,
-				'text_id'    => $current->rev_text_id,
-				'parent_id'  => $current->page_latest,
-				'len'        => $current->rev_len
-				) );
-		} else {
-			$revision = null;
+	public static function newNullRevision( $dbw, $pageId, $summary, $minor, $user = null ) {
+		global $wgUser;
+		if ( !$user ) {
+			$user = $wgUser;
 		}
 
-		wfProfileOut( __METHOD__ );
-		return $revision;
+		$comment = CommentStoreComment::newUnsavedComment( $summary, null );
+
+		$title = Title::newFromID( $pageId, Title::GAID_FOR_UPDATE );
+		if ( $title === null ) {
+			return null;
+		}
+
+		$rec = self::getRevisionStore()->newNullRevision( $dbw, $title, $comment, $minor, $user );
+
+		return new Revision( $rec );
 	}
 
 	/**
 	 * Determine if the current user is allowed to view a particular
 	 * field of this revision, if it's marked as deleted.
 	 *
-	 * @param $field Integer:one of self::DELETED_TEXT,
+	 * @param int $field One of self::DELETED_TEXT,
 	 *                              self::DELETED_COMMENT,
 	 *                              self::DELETED_USER
-	 * @return Boolean
+	 * @param User|null $user User object to check, or null to use $wgUser
+	 * @return bool
 	 */
-	public function userCan( $field ) {
-		return self::userCanBitfield( $this->mDeleted, $field );
+	public function userCan( $field, User $user = null ) {
+		return self::userCanBitfield( $this->getVisibility(), $field, $user );
 	}
 
 	/**
@@ -990,89 +1193,108 @@ class Revision {
 	 * field of this revision, if it's marked as deleted. This is used
 	 * by various classes to avoid duplication.
 	 *
-	 * @param $bitfield Integer: current field
-	 * @param $field Integer: one of self::DELETED_TEXT = File::DELETED_FILE,
+	 * @param int $bitfield Current field
+	 * @param int $field One of self::DELETED_TEXT = File::DELETED_FILE,
 	 *                               self::DELETED_COMMENT = File::DELETED_COMMENT,
 	 *                               self::DELETED_USER = File::DELETED_USER
-	 * @return Boolean
+	 * @param User|null $user User object to check, or null to use $wgUser
+	 * @param Title|null $title A Title object to check for per-page restrictions on,
+	 *                          instead of just plain userrights
+	 * @return bool
 	 */
-	public static function userCanBitfield( $bitfield, $field ) {
-		if( $bitfield & $field ) { // aspect is deleted
-			global $wgUser;
-			if ( $bitfield & self::DELETED_RESTRICTED ) {
-				$permission = 'suppressrevision';
-			} elseif ( $field & self::DELETED_TEXT ) {
-				$permission = 'deletedtext';
-			} else {
-				$permission = 'deletedhistory';
-			}
-			wfDebug( "Checking for $permission due to $field match on $bitfield\n" );
-			return $wgUser->isAllowed( $permission );
-		} else {
-			return true;
+	public static function userCanBitfield( $bitfield, $field, User $user = null,
+		Title $title = null
+	) {
+		global $wgUser;
+
+		if ( !$user ) {
+			$user = $wgUser;
 		}
+
+		return RevisionRecord::userCanBitfield( $bitfield, $field, $user, $title );
 	}
 
 	/**
 	 * Get rev_timestamp from rev_id, without loading the rest of the row
 	 *
-	 * @param $title Title
-	 * @param $id Integer
-	 * @return String
+	 * @param Title $title
+	 * @param int $id
+	 * @param int $flags
+	 * @return string|bool False if not found
 	 */
-	static function getTimestampFromId( $title, $id ) {
-		$dbr = wfGetDB( DB_SLAVE );
-		// Casting fix for DB2
-		if ( $id == '' ) {
-			$id = 0;
-		}
-		$conds = array( 'rev_id' => $id );
-		$conds['rev_page'] = $title->getArticleId();
-		$timestamp = $dbr->selectField( 'revision', 'rev_timestamp', $conds, __METHOD__ );
-		if ( $timestamp === false && wfGetLB()->getServerCount() > 1 ) {
-			# Not in slave, try master
-			$dbw = wfGetDB( DB_MASTER );
-			$timestamp = $dbw->selectField( 'revision', 'rev_timestamp', $conds, __METHOD__ );
-		}
-		return wfTimestamp( TS_MW, $timestamp );
+	static function getTimestampFromId( $title, $id, $flags = 0 ) {
+		return self::getRevisionStore()->getTimestampFromId( $title, $id, $flags );
 	}
 
 	/**
 	 * Get count of revisions per page...not very efficient
 	 *
-	 * @param $db DatabaseBase
-	 * @param $id Integer: page id
-	 * @return Integer
+	 * @param IDatabase $db
+	 * @param int $id Page id
+	 * @return int
 	 */
 	static function countByPageId( $db, $id ) {
-		$row = $db->selectRow( 'revision', 'COUNT(*) AS revCount',
-			array( 'rev_page' => $id ), __METHOD__ );
-		if( $row ) {
-			return $row->revCount;
-		}
-		return 0;
+		return self::getRevisionStore()->countRevisionsByPageId( $db, $id );
 	}
 
 	/**
 	 * Get count of revisions per page...not very efficient
 	 *
-	 * @param $db DatabaseBase
-	 * @param $title Title
-	 * @return Integer
+	 * @param IDatabase $db
+	 * @param Title $title
+	 * @return int
 	 */
 	static function countByTitle( $db, $title ) {
-		$id = $title->getArticleId();
-		if( $id ) {
-			return Revision::countByPageId( $db, $id );
+		return self::getRevisionStore()->countRevisionsByTitle( $db, $title );
+	}
+
+	/**
+	 * Check if no edits were made by other users since
+	 * the time a user started editing the page. Limit to
+	 * 50 revisions for the sake of performance.
+	 *
+	 * @since 1.20
+	 * @deprecated since 1.24
+	 *
+	 * @param IDatabase|int $db The Database to perform the check on. May be given as a
+	 *        Database object or a database identifier usable with wfGetDB.
+	 * @param int $pageId The ID of the page in question
+	 * @param int $userId The ID of the user in question
+	 * @param string $since Look at edits since this time
+	 *
+	 * @return bool True if the given user was the only one to edit since the given timestamp
+	 */
+	public static function userWasLastToEdit( $db, $pageId, $userId, $since ) {
+		if ( is_int( $db ) ) {
+			$db = wfGetDB( $db );
 		}
-		return 0;
+
+		return self::getRevisionStore()->userWasLastToEdit( $db, $pageId, $userId, $since );
+	}
+
+	/**
+	 * Load a revision based on a known page ID and current revision ID from the DB
+	 *
+	 * This method allows for the use of caching, though accessing anything that normally
+	 * requires permission checks (aside from the text) will trigger a small DB lookup.
+	 * The title will also be loaded if $pageIdOrTitle is an integer ID.
+	 *
+	 * @param IDatabase $db ignored!
+	 * @param int|Title $pageIdOrTitle Page ID or Title object
+	 * @param int $revId Known current revision of this page. Determined automatically if not given.
+	 * @return Revision|bool Returns false if missing
+	 * @since 1.28
+	 */
+	public static function newKnownCurrent( IDatabase $db, $pageIdOrTitle, $revId = 0 ) {
+		$title = $pageIdOrTitle instanceof Title
+			? $pageIdOrTitle
+			: Title::newFromID( $pageIdOrTitle );
+
+		if ( !$title ) {
+			return false;
+		}
+
+		$record = self::getRevisionLookup()->getKnownCurrentRevision( $title, $revId );
+		return $record ? new Revision( $record ) : false;
 	}
 }
-
-/**
- * Aliases for backwards compatibility with 1.6
- */
-define( 'MW_REV_DELETED_TEXT', Revision::DELETED_TEXT );
-define( 'MW_REV_DELETED_COMMENT', Revision::DELETED_COMMENT );
-define( 'MW_REV_DELETED_USER', Revision::DELETED_USER );
-define( 'MW_REV_DELETED_RESTRICTED', Revision::DELETED_RESTRICTED );

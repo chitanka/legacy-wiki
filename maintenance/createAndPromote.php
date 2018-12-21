@@ -1,6 +1,6 @@
 <?php
 /**
- * Maintenance script to create an account and grant it administrator rights
+ * Creates an account and grants it rights.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,60 +20,135 @@
  * @file
  * @ingroup Maintenance
  * @author Rob Church <robchur@gmail.com>
+ * @author Pablo Castellano <pablo@anche.no>
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+/**
+ * Maintenance script to create an account and grant it rights.
+ *
+ * @ingroup Maintenance
+ */
 class CreateAndPromote extends Maintenance {
+	private static $permitRoles = [ 'sysop', 'bureaucrat', 'bot' ];
 
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Create a new user account";
-		$this->addOption( "sysop", "Grant the account sysop rights" );
-		$this->addOption( "bureaucrat", "Grant the account bureaucrat rights" );
+		$this->addDescription( 'Create a new user account and/or grant it additional rights' );
+		$this->addOption(
+			'force',
+			'If acccount exists already, just grant it rights or change password.'
+		);
+		foreach ( self::$permitRoles as $role ) {
+			$this->addOption( $role, "Add the account to the {$role} group" );
+		}
+
+		$this->addOption(
+			'custom-groups',
+			'Comma-separated list of groups to add the user to',
+			false,
+			true
+		);
+
 		$this->addArg( "username", "Username of new user" );
-		$this->addArg( "password", "Password to set" );
+		$this->addArg( "password", "Password to set (not required if --force is used)", false );
 	}
 
 	public function execute() {
 		$username = $this->getArg( 0 );
 		$password = $this->getArg( 1 );
-
-		$this->output( wfWikiID() . ": Creating and promoting User:{$username}..." );
+		$force = $this->hasOption( 'force' );
+		$inGroups = [];
 
 		$user = User::newFromName( $username );
 		if ( !is_object( $user ) ) {
-			$this->error( "invalid username.", true );
-		} elseif ( 0 != $user->idForName() ) {
-			$this->error( "account exists.", true );
+			$this->fatalError( "invalid username." );
 		}
 
-		# Try to set the password
-		try {
-			$user->setPassword( $password );
-		} catch ( PasswordError $pwe ) {
-			$this->error( $pwe->getText(), true );
+		$exists = ( 0 !== $user->idForName() );
+
+		if ( $exists && !$force ) {
+			$this->fatalError( "Account exists. Perhaps you want the --force option?" );
+		} elseif ( !$exists && !$password ) {
+			$this->error( "Argument <password> required!" );
+			$this->maybeHelp( true );
+		} elseif ( $exists ) {
+			$inGroups = $user->getGroups();
 		}
 
-		# Insert the account into the database
-		$user->addToDatabase();
-		$user->saveSettings();
+		$groups = array_filter( self::$permitRoles, [ $this, 'hasOption' ] );
+		if ( $this->hasOption( 'custom-groups' ) ) {
+			$allGroups = array_flip( User::getAllGroups() );
+			$customGroupsText = $this->getOption( 'custom-groups' );
+			if ( $customGroupsText !== '' ) {
+				$customGroups = explode( ',', $customGroupsText );
+				foreach ( $customGroups as $customGroup ) {
+					if ( isset( $allGroups[$customGroup] ) ) {
+						$groups[] = trim( $customGroup );
+					} else {
+						$this->output( "$customGroup is not a valid group, ignoring!\n" );
+					}
+				}
+			}
+		}
+
+		$promotions = array_diff(
+			$groups,
+			$inGroups
+		);
+
+		if ( $exists && !$password && count( $promotions ) === 0 ) {
+			$this->output( "Account exists and nothing to do.\n" );
+
+			return;
+		} elseif ( count( $promotions ) !== 0 ) {
+			$promoText = "User:{$username} into " . implode( ', ', $promotions ) . "...\n";
+			if ( $exists ) {
+				$this->output( wfWikiID() . ": Promoting $promoText" );
+			} else {
+				$this->output( wfWikiID() . ": Creating and promoting $promoText" );
+			}
+		}
+
+		if ( !$exists ) {
+			# Insert the account into the database
+			$user->addToDatabase();
+			$user->saveSettings();
+		}
+
+		if ( $password ) {
+			# Try to set the password
+			try {
+				$status = $user->changeAuthenticationData( [
+					'username' => $user->getName(),
+					'password' => $password,
+					'retype' => $password,
+				] );
+				if ( !$status->isGood() ) {
+					throw new PasswordError( $status->getWikiText( null, null, 'en' ) );
+				}
+				if ( $exists ) {
+					$this->output( "Password set.\n" );
+					$user->saveSettings();
+				}
+			} catch ( PasswordError $pwe ) {
+				$this->fatalError( $pwe->getText() );
+			}
+		}
 
 		# Promote user
-		if ( $this->hasOption( 'sysop' ) ) {
-			$user->addGroup( 'bureaucrat' );
-		}
-		if ( $this->hasOption( 'bureaucrat' ) ) {
-			$user->addGroup( 'bureaucrat' );
-		}
+		array_map( [ $user, 'addGroup' ], $promotions );
 
-		# Increment site_stats.ss_users
-		$ssu = new SiteStatsUpdate( 0, 0, 0, 0, 1 );
-		$ssu->doUpdate();
+		if ( !$exists ) {
+			# Increment site_stats.ss_users
+			$ssu = new SiteStatsUpdate( 0, 0, 0, 0, 1 );
+			$ssu->doUpdate();
+		}
 
 		$this->output( "done.\n" );
 	}
 }
 
-$maintClass = "CreateAndPromote";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = CreateAndPromote::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

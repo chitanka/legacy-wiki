@@ -35,30 +35,34 @@ class WithoutInterwikiPage extends PageQueryPage {
 	}
 
 	function execute( $par ) {
-		global $wgRequest;
-		$this->prefix = Title::capitalize( $wgRequest->getVal( 'prefix', $par ), NS_MAIN );
+		$this->prefix = Title::capitalize(
+			$this->getRequest()->getVal( 'prefix', $par ), NS_MAIN );
 		parent::execute( $par );
 	}
 
 	function getPageHeader() {
-		global $wgScript, $wgMiserMode;
-
-		# Do not show useless input form if wiki is running in misermode
-		if( $wgMiserMode ) {
+		# Do not show useless input form if special page is cached
+		if ( $this->isCached() ) {
 			return '';
 		}
 
-		$prefix = $this->prefix;
-		$t = $this->getTitle();
+		$formDescriptor = [
+			'prefix' => [
+				'label-message' => 'allpagesprefix',
+				'name' => 'prefix',
+				'id' => 'wiprefix',
+				'type' => 'text',
+				'size' => 20,
+				'default' => $this->prefix
+			]
+		];
 
-		return Xml::openElement( 'form', array( 'method' => 'get', 'action' => $wgScript ) ) .
-			Xml::openElement( 'fieldset' ) .
-			Xml::element( 'legend', null, wfMsg( 'withoutinterwiki-legend' ) ) .
-			Html::hidden( 'title', $t->getPrefixedText() ) .
-			Xml::inputLabel( wfMsg( 'allpagesprefix' ), 'prefix', 'wiprefix', 20, $prefix ) . ' ' .
-			Xml::submitButton( wfMsg( 'withoutinterwiki-submit' ) ) .
-			Xml::closeElement( 'fieldset' ) .
-			Xml::closeElement( 'form' );
+		$htmlForm = HTMLForm::factory( 'ooui', $formDescriptor, $this->getContext() );
+		$htmlForm->setWrapperLegend( '' )
+			->setSubmitTextMsg( 'withoutinterwiki-submit' )
+			->setMethod( 'get' )
+			->prepareForm()
+			->displayForm( false );
 	}
 
 	function sortDescending() {
@@ -66,7 +70,7 @@ class WithoutInterwikiPage extends PageQueryPage {
 	}
 
 	function getOrderFields() {
-		return array( 'page_namespace', 'page_title' );
+		return [ 'page_namespace', 'page_title' ];
 	}
 
 	function isExpensive() {
@@ -78,21 +82,29 @@ class WithoutInterwikiPage extends PageQueryPage {
 	}
 
 	function getQueryInfo() {
-		$query = array (
-			'tables' => array ( 'page', 'langlinks' ),
-			'fields' => array ( 'page_namespace AS namespace',
-					'page_title AS title',
-					'page_title AS value' ),
-			'conds' => array ( 'll_title IS NULL',
-					'page_namespace' => NS_MAIN,
-					'page_is_redirect' => 0 ),
-			'join_conds' => array ( 'langlinks' => array (
-					'LEFT JOIN', 'll_from = page_id' ) )
-		);
+		$query = [
+			'tables' => [ 'page', 'langlinks' ],
+			'fields' => [
+				'namespace' => 'page_namespace',
+				'title' => 'page_title',
+				'value' => 'page_title'
+			],
+			'conds' => [
+				'll_title IS NULL',
+				'page_namespace' => MWNamespace::getContentNamespaces(),
+				'page_is_redirect' => 0
+			],
+			'join_conds' => [ 'langlinks' => [ 'LEFT JOIN', 'll_from = page_id' ] ]
+		];
 		if ( $this->prefix ) {
-			$dbr = wfGetDb( DB_SLAVE );
+			$dbr = wfGetDB( DB_REPLICA );
 			$query['conds'][] = 'page_title ' . $dbr->buildLike( $this->prefix, $dbr->anyString() );
 		}
+
 		return $query;
+	}
+
+	protected function getGroupName() {
+		return 'maintenance';
 	}
 }

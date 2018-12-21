@@ -21,14 +21,20 @@
  * @ingroup MaintenanceLanguage
  */
 
-require_once( dirname( __FILE__ ) . '/../commandLine.inc' );
-require_once( 'checkLanguage.inc' );
-require_once( 'languages.inc' );
+$optionsWithArgs = [
+	'lang', 'level', 'blacklist', 'whitelist', 'wikilang', 'output', 'prefix'
+];
+$optionsWithoutArgs = [
+	'help', 'links', 'noexif', 'easy', 'duplicate', 'all'
+];
+require_once __DIR__ . '/../commandLine.inc';
+require_once 'checkLanguage.inc';
+require_once 'languages.inc';
 
 $cli = new CheckLanguageCLI( $options );
 
 try {
 	$cli->execute();
-} catch ( MWException $e ) {
+} catch ( Exception $e ) {
 	print 'Error: ' . $e->getMessage() . "\n";
 }

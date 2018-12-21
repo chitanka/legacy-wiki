@@ -18,16 +18,25 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * http://www.gnu.org/copyleft/gpl.html
  *
+ * @file
  * @ingroup Maintenance
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+/**
+ * Maintenance script that manually runs an SQL patch outside of the general updaters.
+ *
+ * @ingroup Maintenance
+ */
 class PatchSql extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Run an SQL file into the DB, replacing prefix and charset vars";
-		$this->addArg( 'patch-name', 'Name of the patch file, either full path or in maintenance/archives' );
+		$this->addDescription( 'Run an SQL file into the DB, replacing prefix and charset vars' );
+		$this->addArg(
+			'patch-name',
+			'Name of the patch file, either full path or in maintenance/archives'
+		);
 	}
 
 	public function getDbType() {
@@ -35,13 +44,15 @@ class PatchSql extends Maintenance {
 	}
 
 	public function execute() {
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = $this->getDB( DB_MASTER );
+		$updater = DatabaseUpdater::newForDB( $dbw, true, $this );
+
 		foreach ( $this->mArgs as $arg ) {
-			$files = array(
+			$files = [
 				$arg,
-				$dbw->patchPath( $arg ),
-				$dbw->patchPath( "patch-$arg.sql" ),
-			);
+				$updater->patchPath( $dbw, $arg ),
+				$updater->patchPath( $dbw, "patch-$arg.sql" ),
+			];
 			foreach ( $files as $file ) {
 				if ( file_exists( $file ) ) {
 					$this->output( "$file ...\n" );
@@ -55,5 +66,5 @@ class PatchSql extends Maintenance {
 	}
 }
 
-$maintClass = "PatchSql";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = PatchSql::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

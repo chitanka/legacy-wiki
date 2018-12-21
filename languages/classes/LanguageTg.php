@@ -1,13 +1,33 @@
 <?php
-
-require_once( dirname( __FILE__ ) . '/../LanguageConverter.php' );
+/**
+ * Tajik (Тоҷикӣ) specific code.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * http://www.gnu.org/copyleft/gpl.html
+ *
+ * @file
+ * @ingroup Language
+ */
 
 /**
  * Converts Tajiki to latin orthography
+ *
  * @ingroup Language
  */
 class TgConverter extends LanguageConverter {
-	private $table = array(
+	private $table = [
 		'а' => 'a',
 		'б' => 'b',
 		'в' => 'v',
@@ -81,13 +101,13 @@ class TgConverter extends LanguageConverter {
 		'Ҳ' => 'H',
 		'Ҷ' => 'Ç',
 		'Ц' => 'Ts',
-	);
+	];
 
 	function loadDefaultTables() {
-		$this->mTables = array(
+		$this->mTables = [
 			'tg-latn' => new ReplacementArray( $this->table ),
-			'tg'      => new ReplacementArray()
-		);
+			'tg' => new ReplacementArray()
+		];
 	}
 
 }
@@ -100,7 +120,7 @@ class TgConverter extends LanguageConverter {
 class LanguageTg extends Language {
 	function __construct() {
 		parent::__construct();
-		$variants = array( 'tg', 'tg-latn' );
+		$variants = [ 'tg', 'tg-latn' ];
 		$this->mConverter = new TgConverter( $this, 'tg', $variants );
 	}
 }

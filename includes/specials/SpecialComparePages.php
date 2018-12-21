@@ -43,86 +43,132 @@ class SpecialComparePages extends SpecialPage {
 	/**
 	 * Show a form for filtering namespace and username
 	 *
-	 * @param $par String
-	 * @return String
+	 * @param string $par
+	 * @return string
 	 */
 	public function execute( $par ) {
 		$this->setHeaders();
 		$this->outputHeader();
+		$this->getOutput()->addModuleStyles( 'mediawiki.special.comparepages.styles' );
 
-		$form = new HTMLForm( array(
-			'Page1' => array(
-				'type' => 'text',
+		$form = HTMLForm::factory( 'ooui', [
+			'Page1' => [
+				'type' => 'title',
 				'name' => 'page1',
 				'label-message' => 'compare-page1',
 				'size' => '40',
 				'section' => 'page1',
-			),
-			'Revision1' => array(
+				'validation-callback' => [ $this, 'checkExistingTitle' ],
+			],
+			'Revision1' => [
 				'type' => 'int',
 				'name' => 'rev1',
 				'label-message' => 'compare-rev1',
 				'size' => '8',
 				'section' => 'page1',
-			),
-			'Page2' => array(
-				'type' => 'text',
+				'validation-callback' => [ $this, 'checkExistingRevision' ],
+			],
+			'Page2' => [
+				'type' => 'title',
 				'name' => 'page2',
 				'label-message' => 'compare-page2',
 				'size' => '40',
 				'section' => 'page2',
-			),
-			'Revision2' => array(
+				'validation-callback' => [ $this, 'checkExistingTitle' ],
+			],
+			'Revision2' => [
 				'type' => 'int',
 				'name' => 'rev2',
 				'label-message' => 'compare-rev2',
 				'size' => '8',
 				'section' => 'page2',
-			),
-			'Action' => array(
+				'validation-callback' => [ $this, 'checkExistingRevision' ],
+			],
+			'Action' => [
 				'type' => 'hidden',
 				'name' => 'action',
-			),
-			'Diffonly' => array(
+			],
+			'Diffonly' => [
 				'type' => 'hidden',
 				'name' => 'diffonly',
-			),
-		), 'compare' );
-		$form->setSubmitText( wfMsg( 'compare-submit' ) );
+			],
+			'Unhide' => [
+				'type' => 'hidden',
+				'name' => 'unhide',
+			],
+		], $this->getContext(), 'compare' );
+		$form->setSubmitTextMsg( 'compare-submit' );
 		$form->suppressReset();
 		$form->setMethod( 'get' );
-		$form->setTitle( $this->getTitle() );
+		$form->setSubmitCallback( [ __CLASS__, 'showDiff' ] );
 
 		$form->loadData();
 		$form->displayForm( '' );
-
-		self::showDiff( $form->mFieldData );
+		$form->trySubmit();
 	}
 
-	public static function showDiff( $data ){
+	public static function showDiff( $data, HTMLForm $form ) {
 		$rev1 = self::revOrTitle( $data['Revision1'], $data['Page1'] );
 		$rev2 = self::revOrTitle( $data['Revision2'], $data['Page2'] );
 
-		if( $rev1 && $rev2 ) {
-			$de = new DifferenceEngine( null,
-				$rev1,
-				$rev2,
-				null, // rcid
-				( $data["Action"] == 'purge' ),
-				false );
-			$de->showDiffPage( true );
+		if ( $rev1 && $rev2 ) {
+			$revision = Revision::newFromId( $rev1 );
+
+			if ( $revision ) { // NOTE: $rev1 was already checked, should exist.
+				$contentHandler = $revision->getContentHandler();
+				$de = $contentHandler->createDifferenceEngine( $form->getContext(),
+					$rev1,
+					$rev2,
+					null, // rcid
+					( $data['Action'] == 'purge' ),
+					( $data['Unhide'] == '1' )
+				);
+				$de->showDiffPage( true );
+			}
 		}
 	}
 
 	public static function revOrTitle( $revision, $title ) {
-		if( $revision ){
+		if ( $revision ) {
 			return $revision;
-		} elseif( $title ) {
+		} elseif ( $title ) {
 			$title = Title::newFromText( $title );
-			if( $title instanceof Title ){
+			if ( $title instanceof Title ) {
 				return $title->getLatestRevID();
 			}
 		}
+
 		return null;
+	}
+
+	public function checkExistingTitle( $value, $alldata ) {
+		if ( $value === '' || $value === null ) {
+			return true;
+		}
+		$title = Title::newFromText( $value );
+		if ( !$title instanceof Title ) {
+			return $this->msg( 'compare-invalid-title' )->parseAsBlock();
+		}
+		if ( !$title->exists() ) {
+			return $this->msg( 'compare-title-not-exists' )->parseAsBlock();
+		}
+
+		return true;
+	}
+
+	public function checkExistingRevision( $value, $alldata ) {
+		if ( $value === '' || $value === null ) {
+			return true;
+		}
+		$revision = Revision::newFromId( $value );
+		if ( $revision === null ) {
+			return $this->msg( 'compare-revision-not-exists' )->parseAsBlock();
+		}
+
+		return true;
+	}
+
+	protected function getGroupName() {
+		return 'pagetools';
 	}
 }

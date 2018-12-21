@@ -24,15 +24,20 @@
  * @ingroup Maintenance
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+/**
+ * Maintenance script to change the password of a given user.
+ *
+ * @ingroup Maintenance
+ */
 class ChangePassword extends Maintenance {
 	public function __construct() {
 		parent::__construct();
 		$this->addOption( "user", "The username to operate on", false, true );
 		$this->addOption( "userid", "The user id to operate on", false, true );
 		$this->addOption( "password", "The password to use", true, true );
-		$this->mDescription = "Change a user's password";
+		$this->addDescription( "Change a user's password" );
 	}
 
 	public function execute() {
@@ -41,20 +46,28 @@ class ChangePassword extends Maintenance {
 		} elseif ( $this->hasOption( "userid" ) ) {
 			$user = User::newFromId( $this->getOption( 'userid' ) );
 		} else {
-			$this->error( "A \"user\" or \"userid\" must be set to change the password for" , true );
+			$this->fatalError( "A \"user\" or \"userid\" must be set to change the password for" );
 		}
-		if ( !$user->getId() ) {
-			$this->error( "No such user: " . $this->getOption( 'user' ), true );
+		if ( !$user || !$user->getId() ) {
+			$this->fatalError( "No such user: " . $this->getOption( 'user' ) );
 		}
+		$password = $this->getOption( 'password' );
 		try {
-			$user->setPassword( $this->getOption( 'password' ) );
+			$status = $user->changeAuthenticationData( [
+				'username' => $user->getName(),
+				'password' => $password,
+				'retype' => $password,
+			] );
+			if ( !$status->isGood() ) {
+				throw new PasswordError( $status->getWikiText( null, null, 'en' ) );
+			}
 			$user->saveSettings();
 			$this->output( "Password set for " . $user->getName() . "\n" );
 		} catch ( PasswordError $pwe ) {
-			$this->error( $pwe->getText(), true );
+			$this->fatalError( $pwe->getText() );
 		}
 	}
 }
 
-$maintClass = "ChangePassword";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = ChangePassword::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Delete old (non-current) revisions from the database
  *
@@ -18,16 +17,22 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * http://www.gnu.org/copyleft/gpl.html
  *
+ * @file
  * @ingroup Maintenance
  * @author Rob Church <robchur@gmail.com>
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+/**
+ * Maintenance script that deletes old (non-current) revisions from the database.
+ *
+ * @ingroup Maintenance
+ */
 class DeleteOldRevisions extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Delete old (non-current) revisions from the database";
+		$this->addDescription( 'Delete old (non-current) revisions from the database' );
 		$this->addOption( 'delete', 'Actually perform the deletion' );
 		$this->addOption( 'page_id', 'List of page ids to work on', false );
 	}
@@ -37,65 +42,62 @@ class DeleteOldRevisions extends Maintenance {
 		$this->doDelete( $this->hasOption( 'delete' ), $this->mArgs );
 	}
 
-	function doDelete( $delete = false, $args = array() ) {
-
+	function doDelete( $delete = false, $args = [] ) {
 		# Data should come off the master, wrapped in a transaction
-		$dbw = wfGetDB( DB_MASTER );
-		$dbw->begin();
+		$dbw = $this->getDB( DB_MASTER );
+		$this->beginTransaction( $dbw, __METHOD__ );
 
-		$tbl_pag = $dbw->tableName( 'page' );
-		$tbl_rev = $dbw->tableName( 'revision' );
-
-		$pageIdClause = '';
-		$revPageClause = '';
+		$pageConds = [];
+		$revConds = [];
 
 		# If a list of page_ids was provided, limit results to that set of page_ids
-		if ( sizeof( $args ) > 0 ) {
-			$pageIdList = implode( ',', $args );
-			$pageIdClause = " WHERE page_id IN ({$pageIdList})";
-			$revPageClause = " AND rev_page IN ({$pageIdList})";
-			$this->output( "Limiting to {$tbl_pag}.page_id IN ({$pageIdList})\n" );
+		if ( count( $args ) > 0 ) {
+			$pageConds['page_id'] = $args;
+			$revConds['rev_page'] = $args;
+			$this->output( "Limiting to page IDs " . implode( ',', $args ) . "\n" );
 		}
 
 		# Get "active" revisions from the page table
 		$this->output( "Searching for active revisions..." );
-		$res = $dbw->query( "SELECT page_latest FROM $tbl_pag{$pageIdClause}" );
+		$res = $dbw->select( 'page', 'page_latest', $pageConds, __METHOD__ );
+		$latestRevs = [];
 		foreach ( $res as $row ) {
-			$cur[] = $row->page_latest;
+			$latestRevs[] = $row->page_latest;
 		}
 		$this->output( "done.\n" );
 
 		# Get all revisions that aren't in this set
-		$old = array();
 		$this->output( "Searching for inactive revisions..." );
-		$set = implode( ', ', $cur );
-		$res = $dbw->query( "SELECT rev_id FROM $tbl_rev WHERE rev_id NOT IN ( $set ){$revPageClause}" );
+		if ( count( $latestRevs ) > 0 ) {
+			$revConds[] = 'rev_id NOT IN (' . $dbw->makeList( $latestRevs ) . ')';
+		}
+		$res = $dbw->select( 'revision', 'rev_id', $revConds, __METHOD__ );
+		$oldRevs = [];
 		foreach ( $res as $row ) {
-			$old[] = $row->rev_id;
+			$oldRevs[] = $row->rev_id;
 		}
 		$this->output( "done.\n" );
 
 		# Inform the user of what we're going to do
-		$count = count( $old );
+		$count = count( $oldRevs );
 		$this->output( "$count old revisions found.\n" );
 
 		# Delete as appropriate
 		if ( $delete && $count ) {
 			$this->output( "Deleting..." );
-			$set = implode( ', ', $old );
-			$dbw->query( "DELETE FROM $tbl_rev WHERE rev_id IN ( $set )" );
+			$dbw->delete( 'revision', [ 'rev_id' => $oldRevs ], __METHOD__ );
+			$dbw->delete( 'ip_changes', [ 'ipc_rev_id' => $oldRevs ], __METHOD__ );
 			$this->output( "done.\n" );
 		}
 
 		# This bit's done
 		# Purge redundant text records
-		$dbw->commit();
+		$this->commitTransaction( $dbw, __METHOD__ );
 		if ( $delete ) {
 			$this->purgeRedundantText( true );
 		}
 	}
 }
 
-$maintClass = "DeleteOldRevisions";
-require_once( RUN_MAINTENANCE_IF_MAIN );
-
+$maintClass = DeleteOldRevisions::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

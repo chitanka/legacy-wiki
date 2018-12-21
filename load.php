@@ -1,6 +1,6 @@
 <?php
 /**
- * This file is the entry point for the resource loader.
+ * This file is the entry point for ResourceLoader.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,52 +20,37 @@
  * @file
  * @author Roan Kattouw
  * @author Trevor Parscal
- *
  */
 
-// We want error messages to not be interpreted as CSS or JS
-function wfDie( $msg = '' ) {
-	header( $_SERVER['SERVER_PROTOCOL'] . ' 500 MediaWiki configuration Error', true, 500 );
-	echo "/* $msg */";
-	die( 1 );
-}
+use MediaWiki\Logger\LoggerFactory;
+use MediaWiki\MediaWikiServices;
 
-// Load global constants, including MW_VERSION and MW_MIN_PHP_VERSION
-require_once( dirname( __FILE__ ) . '/includes/Defines.php' );
+// This endpoint is supposed to be independent of request cookies and other
+// details of the session. Enforce this constraint with respect to session use.
+define( 'MW_NO_SESSION', 1 );
 
-// Die on unsupported PHP versions
-if( !function_exists( 'version_compare' ) || version_compare( phpversion(), MW_MIN_PHP_VERSION ) < 0 ){
-	$version = htmlspecialchars( MW_VERSION );
-	$phpversion = htmlspecialchars( MW_MIN_PHP_VERSION );
-	wfDie( "MediaWiki $version requires at least PHP version $phpversion." );
-}
-
-require ( dirname( __FILE__ ) . '/includes/WebStart.php' );
-wfProfileIn( 'load.php' );
+require __DIR__ . '/includes/WebStart.php';
 
 // URL safety checks
-//
-// See RawPage.php for details; summary is that MSIE can override the
-// Content-Type if it sees a recognized extension on the URL, such as
-// might be appended via PATH_INFO after 'load.php'.
-//
-// Some resources can contain HTML-like strings (e.g. in messages)
-// which will end up triggering HTML detection and execution.
-//
-if ( $wgRequest->isPathInfoBad() ) {
-	wfHttpError( 403, 'Forbidden',
-		'Invalid file extension found in PATH_INFO or QUERY_STRING.' );
+if ( !$wgRequest->checkUrlExtension() ) {
 	return;
 }
 
-// Respond to resource loading request
-$resourceLoader = new ResourceLoader();
-$resourceLoader->respond( new ResourceLoaderContext( $resourceLoader, $wgRequest ) );
+// Disable ChronologyProtector so that we don't wait for unrelated MediaWiki
+// writes when getting database connections for ResourceLoader. (T192611)
+MediaWikiServices::getInstance()->getDBLoadBalancerFactory()->disableChronologyProtection();
 
-wfProfileOut( 'load.php' );
-wfLogProfilingData();
+// Set up ResourceLoader
+$resourceLoader = new ResourceLoader(
+	ConfigFactory::getDefaultInstance()->makeConfig( 'main' ),
+	LoggerFactory::getInstance( 'resourceloader' )
+);
+$context = new ResourceLoaderContext( $resourceLoader, $wgRequest );
 
-// Shut down the database.  foo()->bar() syntax is not supported in PHP4, and this file
-// needs to *parse* in PHP4, although we'll never get down here to worry about = vs =&
-$lb = wfGetLBFactory();
-$lb->shutdown();
+// Respond to ResourceLoader request
+$resourceLoader->respond( $context );
+
+Profiler::instance()->setTemplated( true );
+
+$mediawiki = new MediaWiki();
+$mediawiki->doPostOutputShutdown( 'fast' );

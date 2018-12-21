@@ -1,6 +1,6 @@
 <?php
 /**
- * Implements Special:Confirmemail and Special:Invalidateemail
+ * Implements Special:Confirmemail
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,48 +30,48 @@
  * @author Rob Church <robchur@gmail.com>
  */
 class EmailConfirmation extends UnlistedSpecialPage {
-
-	/**
-	 * Constructor
-	 */
 	public function __construct() {
-		parent::__construct( 'Confirmemail' );
+		parent::__construct( 'Confirmemail', 'editmyprivateinfo' );
+	}
+
+	public function doesWrites() {
+		return true;
 	}
 
 	/**
 	 * Main execution point
 	 *
-	 * @param $code Confirmation code passed to the page
+	 * @param null|string $code Confirmation code passed to the page
+	 * @throws PermissionsError
+	 * @throws ReadOnlyError
+	 * @throws UserNotLoggedIn
 	 */
 	function execute( $code ) {
-		global $wgUser, $wgOut;
-		$this->setHeaders();
+		// Ignore things like master queries/connections on GET requests.
+		// It's very convenient to just allow formless link usage.
+		$trxProfiler = Profiler::instance()->getTransactionProfiler();
 
-		if ( wfReadOnly() ) {
-			$wgOut->readOnlyPage();
-			return;
+		$this->setHeaders();
+		$this->checkReadOnly();
+		$this->checkPermissions();
+
+		// This could also let someone check the current email address, so
+		// require both permissions.
+		if ( !$this->getUser()->isAllowed( 'viewmyprivateinfo' ) ) {
+			throw new PermissionsError( 'viewmyprivateinfo' );
 		}
 
-		if( empty( $code ) ) {
-			if( $wgUser->isLoggedIn() ) {
-				if( User::isValidEmailAddr( $wgUser->getEmail() ) ) {
-					$this->showRequestForm();
-				} else {
-					$wgOut->addWikiMsg( 'confirmemail_noemail' );
-				}
+		if ( $code === null || $code === '' ) {
+			$this->requireLogin( 'confirmemail_needlogin' );
+			if ( Sanitizer::validateEmail( $this->getUser()->getEmail() ) ) {
+				$this->showRequestForm();
 			} else {
-				$title = SpecialPage::getTitleFor( 'Userlogin' );
-				$skin = $wgUser->getSkin();
-				$llink = $skin->linkKnown(
-					$title,
-					wfMsgHtml( 'loginreqlink' ),
-					array(),
-					array( 'returnto' => $this->getTitle()->getPrefixedText() )
-				);
-				$wgOut->addWikiMsgArray( 'confirmemail_needlogin', array( $llink ), array( 'replaceafter' ) );
+				$this->getOutput()->addWikiMsg( 'confirmemail_noemail' );
 			}
 		} else {
+			$old = $trxProfiler->setSilenced( true );
 			$this->attemptConfirm( $code );
+			$trxProfiler->setSilenced( $old );
 		}
 	}
 
@@ -79,33 +79,65 @@ class EmailConfirmation extends UnlistedSpecialPage {
 	 * Show a nice form for the user to request a confirmation mail
 	 */
 	function showRequestForm() {
-		global $wgOut, $wgUser, $wgLang, $wgRequest;
-		if( $wgRequest->wasPosted() && $wgUser->matchEditToken( $wgRequest->getText( 'token' ) ) ) {
-			$status = $wgUser->sendConfirmationMail();
-			if ( $status->isGood() ) {
-				$wgOut->addWikiMsg( 'confirmemail_sent' );
-			} else {
-				$wgOut->addWikiText( $status->getWikiText( 'confirmemail_sendfailed' ) );
+		$user = $this->getUser();
+		$out = $this->getOutput();
+
+		if ( !$user->isEmailConfirmed() ) {
+			$descriptor = [];
+			if ( $user->isEmailConfirmationPending() ) {
+				$descriptor += [
+					'pending' => [
+						'type' => 'info',
+						'raw' => true,
+						'default' => "<div class=\"error mw-confirmemail-pending\">\n" .
+							$this->msg( 'confirmemail_pending' )->escaped() .
+							"\n</div>",
+					],
+				];
+			}
+
+			$out->addWikiMsg( 'confirmemail_text' );
+			$form = HTMLForm::factory( 'ooui', $descriptor, $this->getContext() );
+			$form
+				->setMethod( 'post' )
+				->setAction( $this->getPageTitle()->getLocalURL() )
+				->setSubmitTextMsg( 'confirmemail_send' )
+				->setSubmitCallback( [ $this, 'submitSend' ] );
+
+			$retval = $form->show();
+
+			if ( $retval === true ) {
+				// should never happen, but if so, don't let the user without any message
+				$out->addWikiMsg( 'confirmemail_sent' );
+			} elseif ( $retval instanceof Status && $retval->isGood() ) {
+				$out->addWikiText( $retval->getValue() );
 			}
 		} else {
-			if( $wgUser->isEmailConfirmed() ) {
-				// date and time are separate parameters to facilitate localisation.
-				// $time is kept for backward compat reasons.
-				// 'emailauthenticated' is also used in SpecialPreferences.php
-				$time = $wgLang->timeAndDate( $wgUser->mEmailAuthenticated, true );
-				$d = $wgLang->date( $wgUser->mEmailAuthenticated, true );
-				$t = $wgLang->time( $wgUser->mEmailAuthenticated, true );
-				$wgOut->addWikiMsg( 'emailauthenticated', $time, $d, $t );
-			}
-			if( $wgUser->isEmailConfirmationPending() ) {
-				$wgOut->wrapWikiMsg( "<div class=\"error mw-confirmemail-pending\">\n$1\n</div>", 'confirmemail_pending' );
-			}
-			$wgOut->addWikiMsg( 'confirmemail_text' );
-			$form  = Xml::openElement( 'form', array( 'method' => 'post', 'action' => $this->getTitle()->getLocalUrl() ) );
-			$form .= Html::hidden( 'token', $wgUser->editToken() );
-			$form .= Xml::submitButton( wfMsg( 'confirmemail_send' ) );
-			$form .= Xml::closeElement( 'form' );
-			$wgOut->addHTML( $form );
+			// date and time are separate parameters to facilitate localisation.
+			// $time is kept for backward compat reasons.
+			// 'emailauthenticated' is also used in SpecialPreferences.php
+			$lang = $this->getLanguage();
+			$emailAuthenticated = $user->getEmailAuthenticationTimestamp();
+			$time = $lang->userTimeAndDate( $emailAuthenticated, $user );
+			$d = $lang->userDate( $emailAuthenticated, $user );
+			$t = $lang->userTime( $emailAuthenticated, $user );
+			$out->addWikiMsg( 'emailauthenticated', $time, $d, $t );
+		}
+	}
+
+	/**
+	 * Callback for HTMLForm send confirmation mail.
+	 *
+	 * @return Status Status object with the result
+	 */
+	public function submitSend() {
+		$status = $this->getUser()->sendConfirmationMail();
+		if ( $status->isGood() ) {
+			return Status::newGood( $this->msg( 'confirmemail_sent' )->text() );
+		} else {
+			return Status::newFatal( new RawMessage(
+				$status->getWikiText( 'confirmemail_sendfailed' )
+			) );
 		}
 	}
 
@@ -113,69 +145,24 @@ class EmailConfirmation extends UnlistedSpecialPage {
 	 * Attempt to confirm the user's email address and show success or failure
 	 * as needed; if successful, take the user to log in
 	 *
-	 * @param $code Confirmation code
+	 * @param string $code Confirmation code
 	 */
-	function attemptConfirm( $code ) {
-		global $wgUser, $wgOut;
-		$user = User::newFromConfirmationCode( $code );
-		if( is_object( $user ) ) {
-			$user->confirmEmail();
-			$user->saveSettings();
-			$message = $wgUser->isLoggedIn() ? 'confirmemail_loggedin' : 'confirmemail_success';
-			$wgOut->addWikiMsg( $message );
-			if( !$wgUser->isLoggedIn() ) {
-				$title = SpecialPage::getTitleFor( 'Userlogin' );
-				$wgOut->returnToMain( true, $title );
-			}
-		} else {
-			$wgOut->addWikiMsg( 'confirmemail_invalid' );
-		}
-	}
+	private function attemptConfirm( $code ) {
+		$user = User::newFromConfirmationCode( $code, User::READ_LATEST );
+		if ( !is_object( $user ) ) {
+			$this->getOutput()->addWikiMsg( 'confirmemail_invalid' );
 
-}
-
-/**
- * Special page allows users to cancel an email confirmation using the e-mail
- * confirmation code
- *
- * @ingroup SpecialPage
- */
-class EmailInvalidation extends UnlistedSpecialPage {
-
-	public function __construct() {
-		parent::__construct( 'Invalidateemail' );
-	}
-
-	function execute( $code ) {
-		$this->setHeaders();
-
-		if ( wfReadOnly() ) {
-			global $wgOut;
-			$wgOut->readOnlyPage();
 			return;
 		}
 
-		$this->attemptInvalidate( $code );
-	}
+		$user->confirmEmail();
+		$user->saveSettings();
+		$message = $this->getUser()->isLoggedIn() ? 'confirmemail_loggedin' : 'confirmemail_success';
+		$this->getOutput()->addWikiMsg( $message );
 
-	/**
-	 * Attempt to invalidate the user's email address and show success or failure
-	 * as needed; if successful, link to main page
-	 *
-	 * @param $code Confirmation code
-	 */
-	function attemptInvalidate( $code ) {
-		global $wgUser, $wgOut;
-		$user = User::newFromConfirmationCode( $code );
-		if( is_object( $user ) ) {
-			$user->invalidateEmail();
-			$user->saveSettings();
-			$wgOut->addWikiMsg( 'confirmemail_invalidated' );
-			if( !$wgUser->isLoggedIn() ) {
-				$wgOut->returnToMain();
-			}
-		} else {
-			$wgOut->addWikiMsg( 'confirmemail_invalid' );
+		if ( !$this->getUser()->isLoggedIn() ) {
+			$title = SpecialPage::getTitleFor( 'Userlogin' );
+			$this->getOutput()->returnToMain( true, $title );
 		}
 	}
 }

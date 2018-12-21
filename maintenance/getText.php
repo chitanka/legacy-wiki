@@ -1,6 +1,7 @@
 <?php
 /**
- * Outputs page text to stdout, useful for command-line editing automation.
+ * Outputs page text to stdout.
+ * Useful for command-line editing automation.
  * Example: php getText.php "page title" | sed -e '...' | php edit.php "page title"
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,41 +19,48 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * http://www.gnu.org/copyleft/gpl.html
  *
+ * @file
  * @ingroup Maintenance
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+/**
+ * Maintenance script that outputs page text to stdout.
+ *
+ * @ingroup Maintenance
+ */
 class GetTextMaint extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = 'Outputs page text to stdout';
+		$this->addDescription( 'Outputs page text to stdout' );
 		$this->addOption( 'show-private', 'Show the text even if it\'s not available to the public' );
 		$this->addArg( 'title', 'Page title' );
 	}
 
 	public function execute() {
-		$this->db = wfGetDB( DB_SLAVE );
-
 		$titleText = $this->getArg( 0 );
 		$title = Title::newFromText( $titleText );
 		if ( !$title ) {
-			$this->error( "$titleText is not a valid title.\n", true );
+			$this->fatalError( "$titleText is not a valid title.\n" );
 		}
 
 		$rev = Revision::newFromTitle( $title );
 		if ( !$rev ) {
 			$titleText = $title->getPrefixedText();
-			$this->error( "Page $titleText does not exist.\n", true );
+			$this->fatalError( "Page $titleText does not exist.\n" );
 		}
-		$text = $rev->getText( $this->hasOption( 'show-private' ) ? Revision::RAW : Revision::FOR_PUBLIC );
-		if ( $text === false ) {
+		$content = $rev->getContent( $this->hasOption( 'show-private' )
+			? Revision::RAW
+			: Revision::FOR_PUBLIC );
+
+		if ( $content === false ) {
 			$titleText = $title->getPrefixedText();
-			$this->error( "Couldn't extract the text from $titleText.\n", true );
+			$this->fatalError( "Couldn't extract the text from $titleText.\n" );
 		}
-		$this->output( $text );
+		$this->output( $content->serialize() );
 	}
 }
 
-$maintClass = "GetTextMaint";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = GetTextMaint::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

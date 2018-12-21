@@ -1,6 +1,6 @@
 <?php
 /**
- * Script to populate category table.
+ * Populate the category table.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,18 +22,21 @@
  * @author Simetrical
  */
 
-$optionsWithArgs = array( 'begin', 'max-slave-lag', 'throttle' );
+require_once __DIR__ . '/Maintenance.php';
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
-
-
+/**
+ * Maintenance script to populate the category table.
+ *
+ * @ingroup Maintenance
+ */
 class PopulateCategory extends Maintenance {
 
 	const REPORTING_INTERVAL = 1000;
 
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = <<<TEXT
+		$this->addDescription(
+			<<<TEXT
 This script will populate the category table, added in MediaWiki 1.13.  It will
 print out progress indicators every 1000 categories it adds to the table.  The
 script is perfectly safe to run on large, live wikis, and running it multiple
@@ -47,36 +50,43 @@ added after the software update and so will be populated anyway.
 
 When the script has finished, it will make a note of this in the database, and
 will not run again without the --force option.
-TEXT;
-# '
-		$this->addOption( 'begin', 'Only do categories whose names are alphabetically after the provided name', false, true );
-		$this->addOption( 'max-slave-lag', 'If slave lag exceeds this many seconds, wait until it drops before continuing.  Default: 10', false, true );
-		$this->addOption( 'throttle', 'Wait this many milliseconds after each category.  Default: 0', false, true );
+TEXT
+		);
+
+		$this->addOption(
+			'begin',
+			'Only do categories whose names are alphabetically after the provided name',
+			false,
+			true
+		);
+		$this->addOption(
+			'throttle',
+			'Wait this many milliseconds after each category. Default: 0',
+			false,
+			true
+		);
 		$this->addOption( 'force', 'Run regardless of whether the database says it\'s been run already' );
 	}
 
 	public function execute() {
 		$begin = $this->getOption( 'begin', '' );
-		$maxSlaveLag = $this->getOption( 'max-slave-lag', 10 );
 		$throttle = $this->getOption( 'throttle', 0 );
-		$force = $this->getOption( 'force', false );
-		$this->doPopulateCategory( $begin, $maxSlaveLag, $throttle, $force );
-	}
+		$force = $this->hasOption( 'force' );
 
-	private function doPopulateCategory( $begin, $maxlag, $throttle, $force ) {
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = $this->getDB( DB_MASTER );
 
 		if ( !$force ) {
 			$row = $dbw->selectRow(
 				'updatelog',
 				'1',
-				array( 'ul_key' => 'populate category' ),
+				[ 'ul_key' => 'populate category' ],
 				__METHOD__
 			);
 			if ( $row ) {
 				$this->output( "Category table already populated.  Use php " .
-				"maintenance/populateCategory.php\n--force from the command line " .
-				"to override.\n" );
+					"maintenance/populateCategory.php\n--force from the command line " .
+					"to override.\n" );
+
 				return true;
 			}
 		}
@@ -96,9 +106,9 @@ TEXT;
 				'cl_to',
 				$where,
 				__METHOD__,
-				array(
+				[
 					'ORDER BY' => 'cl_to'
-				)
+				]
 			);
 			if ( !$row ) {
 				# Done, hopefully.
@@ -124,20 +134,21 @@ TEXT;
 		}
 
 		if ( $dbw->insert(
-				'updatelog',
-				array( 'ul_key' => 'populate category' ),
-				__METHOD__,
-				'IGNORE'
-			)
-		) {
+			'updatelog',
+			[ 'ul_key' => 'populate category' ],
+			__METHOD__,
+			'IGNORE'
+		) ) {
 			$this->output( "Category population complete.\n" );
+
 			return true;
 		} else {
 			$this->output( "Could not insert category population row.\n" );
+
 			return false;
 		}
 	}
 }
 
-$maintClass = "PopulateCategory";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = PopulateCategory::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

@@ -24,61 +24,83 @@
  * @author Rob Church <robchur@gmail.com>
  */
 
+use Wikimedia\Rdbms\IResultWrapper;
+use Wikimedia\Rdbms\IDatabase;
+
 /**
  * Special:Listredirects - Lists all the redirects on the wiki.
  * @ingroup SpecialPage
  */
 class ListredirectsPage extends QueryPage {
-
 	function __construct( $name = 'Listredirects' ) {
 		parent::__construct( $name );
 	}
 
-	function isExpensive() { return true; }
-	function isSyndicated() { return false; }
-	function sortDescending() { return false; }
+	public function isExpensive() {
+		return true;
+	}
 
-	function getQueryInfo() {
-		return array(
-			'tables' => array( 'p1' => 'page', 'redirect', 'p2' => 'page' ),
-			'fields' => array( 'p1.page_namespace AS namespace',
-					'p1.page_title AS title',
-					'rd_namespace',
-					'rd_title',
-					'rd_fragment',
-					'rd_interwiki',
-					'p2.page_id AS redirid' ),
-			'conds' => array( 'p1.page_is_redirect' => 1 ),
-			'join_conds' => array( 'redirect' => array(
-					'LEFT JOIN', 'rd_from=p1.page_id' ),
-				'p2' => array( 'LEFT JOIN', array(
+	function isSyndicated() {
+		return false;
+	}
+
+	function sortDescending() {
+		return false;
+	}
+
+	public function getQueryInfo() {
+		return [
+			'tables' => [ 'p1' => 'page', 'redirect', 'p2' => 'page' ],
+			'fields' => [ 'namespace' => 'p1.page_namespace',
+				'title' => 'p1.page_title',
+				'value' => 'p1.page_title',
+				'rd_namespace',
+				'rd_title',
+				'rd_fragment',
+				'rd_interwiki',
+				'redirid' => 'p2.page_id' ],
+			'conds' => [ 'p1.page_is_redirect' => 1 ],
+			'join_conds' => [ 'redirect' => [
+				'LEFT JOIN', 'rd_from=p1.page_id' ],
+				'p2' => [ 'LEFT JOIN', [
 					'p2.page_namespace=rd_namespace',
-					'p2.page_title=rd_title' ) ) )
-		);
+					'p2.page_title=rd_title' ] ] ]
+		];
 	}
 
 	function getOrderFields() {
-		return array ( 'p1.page_namespace', 'p1.page_title' );
+		return [ 'p1.page_namespace', 'p1.page_title' ];
 	}
 
 	/**
 	 * Cache page existence for performance
+	 *
+	 * @param IDatabase $db
+	 * @param IResultWrapper $res
 	 */
 	function preprocessResults( $db, $res ) {
+		if ( !$res->numRows() ) {
+			return;
+		}
+
 		$batch = new LinkBatch;
 		foreach ( $res as $row ) {
 			$batch->add( $row->namespace, $row->title );
-			$batch->addObj( $this->getRedirectTarget( $row ) );
+			$redirTarget = $this->getRedirectTarget( $row );
+			if ( $redirTarget ) {
+				$batch->addObj( $redirTarget );
+			}
 		}
 		$batch->execute();
 
 		// Back to start for display
-		if ( $db->numRows( $res ) > 0 ) {
-			// If there are no rows we get an error seeking.
-			$db->dataSeek( $res, 0 );
-		}
+		$res->seek( 0 );
 	}
 
+	/**
+	 * @param stdClass $row
+	 * @return Title|null
+	 */
 	protected function getRedirectTarget( $row ) {
 		if ( isset( $row->rd_title ) ) {
 			return Title::makeTitle( $row->rd_namespace,
@@ -87,32 +109,43 @@ class ListredirectsPage extends QueryPage {
 			);
 		} else {
 			$title = Title::makeTitle( $row->namespace, $row->title );
-			$article = new Article( $title );
+			$article = WikiPage::factory( $title );
+
 			return $article->getRedirectTarget();
 		}
 	}
 
+	/**
+	 * @param Skin $skin
+	 * @param object $result Result row
+	 * @return string
+	 */
 	function formatResult( $skin, $result ) {
-		global $wgContLang;
-
+		$linkRenderer = $this->getLinkRenderer();
 		# Make a link to the redirect itself
 		$rd_title = Title::makeTitle( $result->namespace, $result->title );
-		$rd_link = $skin->link(
+		$rd_link = $linkRenderer->makeLink(
 			$rd_title,
 			null,
-			array(),
-			array( 'redirect' => 'no' )
+			[],
+			[ 'redirect' => 'no' ]
 		);
 
 		# Find out where the redirect leads
 		$target = $this->getRedirectTarget( $result );
-		if( $target ) {
+		if ( $target ) {
 			# Make a link to the destination page
-			$arr = $wgContLang->getArrow() . $wgContLang->getDirMark();
-			$targetLink = $skin->link( $target );
+			$lang = $this->getLanguage();
+			$arr = $lang->getArrow() . $lang->getDirMark();
+			$targetLink = $linkRenderer->makeLink( $target, $target->getFullText() );
+
 			return "$rd_link $arr $targetLink";
 		} else {
 			return "<del>$rd_link</del>";
 		}
+	}
+
+	protected function getGroupName() {
+		return 'pages';
 	}
 }

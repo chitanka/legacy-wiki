@@ -2,21 +2,44 @@
 /**
  * Date formatter
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * http://www.gnu.org/copyleft/gpl.html
+ *
  * @file
+ * @ingroup Parser
  */
 
 /**
- * Date formatter, recognises dates in plain text and formats them accoding to user preferences.
+ * Date formatter, recognises dates in plain text and formats them according to user preferences.
  * @todo preferences, OutputPage
  * @ingroup Parser
  */
-class DateFormatter
-{
-	var $mSource, $mTarget;
-	var $monthNames = '', $rxDM, $rxMD, $rxDMY, $rxYDM, $rxMDY, $rxYMD;
+class DateFormatter {
+	private $mSource, $mTarget;
+	private $monthNames = '';
 
-	var $regexes, $pDays, $pMonths, $pYears;
-	var $rules, $xMonths, $preferences;
+	private $regexes;
+	private $rules, $xMonths, $preferences;
+
+	private $lang, $mLinked;
+
+	/** @var string[] */
+	private $keys;
+
+	/** @var string[] */
+	private $targets;
 
 	const ALL = -1;
 	const NONE = 0;
@@ -32,15 +55,15 @@ class DateFormatter
 	const LAST = 8;
 
 	/**
-	 * @todo document
+	 * @param Language $lang In which language to format the date
 	 */
-	function __construct() {
-		global $wgContLang;
+	public function __construct( Language $lang ) {
+		$this->lang = $lang;
 
 		$this->monthNames = $this->getMonthRegex();
-		for ( $i=1; $i<=12; $i++ ) {
-			$this->xMonths[$wgContLang->lc( $wgContLang->getMonthName( $i ) )] = $i;
-			$this->xMonths[$wgContLang->lc( $wgContLang->getMonthAbbreviation( $i ) )] = $i;
+		for ( $i = 1; $i <= 12; $i++ ) {
+			$this->xMonths[$this->lang->lc( $this->lang->getMonthName( $i ) )] = $i;
+			$this->xMonths[$this->lang->lc( $this->lang->getMonthAbbreviation( $i ) )] = $i;
 		}
 
 		$this->regexTrail = '(?![a-z])/iu';
@@ -84,61 +107,74 @@ class DateFormatter
 		$this->targets[self::ISO2] = '[[y-m-d]]';
 
 		# Rules
-		#            pref    source 	  target
-		$this->rules[self::DMY][self::MD] 	= self::DM;
-		$this->rules[self::ALL][self::MD] 	= self::MD;
-		$this->rules[self::MDY][self::DM] 	= self::MD;
-		$this->rules[self::ALL][self::DM] 	= self::DM;
-		$this->rules[self::NONE][self::ISO2] 	= self::ISO1;
+		#            pref       source      target
+		$this->rules[self::DMY][self::MD] = self::DM;
+		$this->rules[self::ALL][self::MD] = self::MD;
+		$this->rules[self::MDY][self::DM] = self::MD;
+		$this->rules[self::ALL][self::DM] = self::DM;
+		$this->rules[self::NONE][self::ISO2] = self::ISO1;
 
-		$this->preferences = array(
+		$this->preferences = [
 			'default' => self::NONE,
 			'dmy' => self::DMY,
 			'mdy' => self::MDY,
 			'ymd' => self::YMD,
 			'ISO 8601' => self::ISO1,
-		);
+		];
 	}
 
 	/**
 	 * Get a DateFormatter object
 	 *
-	 * @return DateFormatter object
+	 * @param Language|null $lang In which language to format the date
+	 *     Defaults to the site content language
+	 * @return DateFormatter
 	 */
-	public static function &getInstance() {
-		global $wgMemc;
+	public static function getInstance( $lang = null ) {
+		global $wgContLang, $wgMainCacheType;
+
+		if ( is_string( $lang ) ) {
+			wfDeprecated( __METHOD__ . ' with type string for $lang', '1.31' );
+		}
+		$lang = $lang ? wfGetLangObj( $lang ) : $wgContLang;
+		$cache = ObjectCache::getLocalServerInstance( $wgMainCacheType );
+
 		static $dateFormatter = false;
 		if ( !$dateFormatter ) {
-			$dateFormatter = $wgMemc->get( wfMemcKey( 'dateformatter' ) );
-			if ( !$dateFormatter ) {
-				$dateFormatter = new DateFormatter;
-				$wgMemc->set( wfMemcKey( 'dateformatter' ), $dateFormatter, 3600 );
-			}
+			$dateFormatter = $cache->getWithSetCallback(
+				$cache->makeKey( 'dateformatter', $lang->getCode() ),
+				$cache::TTL_HOUR,
+				function () use ( $lang ) {
+					return new DateFormatter( $lang );
+				}
+			);
 		}
+
 		return $dateFormatter;
 	}
 
 	/**
-	 * @param $preference String: User preference
-	 * @param $text String: Text to reformat
-	 * @param $options Array: can contain 'linked' and/or 'match-whole'
+	 * @param string $preference User preference
+	 * @param string $text Text to reformat
+	 * @param array $options Array can contain 'linked' and/or 'match-whole'
+	 *
+	 * @return string
 	 */
-	function reformat( $preference, $text, $options = array('linked') ) {
-	
+	public function reformat( $preference, $text, $options = [ 'linked' ] ) {
 		$linked = in_array( 'linked', $options );
 		$match_whole = in_array( 'match-whole', $options );
-		
+
 		if ( isset( $this->preferences[$preference] ) ) {
 			$preference = $this->preferences[$preference];
 		} else {
 			$preference = self::NONE;
 		}
-		for ( $i=1; $i<=self::LAST; $i++ ) {
+		for ( $i = 1; $i <= self::LAST; $i++ ) {
 			$this->mSource = $i;
-			if ( isset ( $this->rules[$preference][$i] ) ) {
+			if ( isset( $this->rules[$preference][$i] ) ) {
 				# Specific rules
 				$this->mTarget = $this->rules[$preference][$i];
-			} elseif ( isset ( $this->rules[self::ALL][$i] ) ) {
+			} elseif ( isset( $this->rules[self::ALL][$i] ) ) {
 				# General rules
 				$this->mTarget = $this->rules[self::ALL][$i];
 			} elseif ( $preference ) {
@@ -149,67 +185,81 @@ class DateFormatter
 				$this->mTarget = $i;
 			}
 			$regex = $this->regexes[$i];
-			
+
 			// Horrible hack
-			if (!$linked) {
-				$regex = str_replace( array( '\[\[', '\]\]' ), '', $regex );
+			if ( !$linked ) {
+				$regex = str_replace( [ '\[\[', '\]\]' ], '', $regex );
 			}
-			
-			if ($match_whole) {
+
+			if ( $match_whole ) {
 				// Let's hope this works
 				$regex = preg_replace( '!^/!', '/^', $regex );
 				$regex = str_replace( $this->regexTrail,
-					'$'.$this->regexTrail, $regex );
+					'$' . $this->regexTrail, $regex );
 			}
-			
+
 			// Another horrible hack
 			$this->mLinked = $linked;
-			$text = preg_replace_callback( $regex, array( &$this, 'replace' ), $text );
-			unset($this->mLinked);
+			$text = preg_replace_callback( $regex, [ $this, 'replace' ], $text );
+			unset( $this->mLinked );
 		}
 		return $text;
 	}
 
 	/**
-	 * @param $matches
+	 * Regexp replacement callback
+	 *
+	 * @param array $matches
+	 * @return string
 	 */
-	function replace( $matches ) {
+	private function replace( $matches ) {
 		# Extract information from $matches
 		$linked = true;
-		if ( isset( $this->mLinked ) )
+		if ( isset( $this->mLinked ) ) {
 			$linked = $this->mLinked;
-		
-		$bits = array();
+		}
+
+		$bits = [];
 		$key = $this->keys[$this->mSource];
-		for ( $p=0; $p < strlen($key); $p++ ) {
+		$keyLength = strlen( $key );
+		for ( $p = 0; $p < $keyLength; $p++ ) {
 			if ( $key[$p] != ' ' ) {
-				$bits[$key[$p]] = $matches[$p+1];
+				$bits[$key[$p]] = $matches[$p + 1];
 			}
 		}
-		
-		return $this->formatDate( $bits, $linked );
+
+		return $this->formatDate( $bits, $matches[0], $linked );
 	}
-	
-	function formatDate( $bits, $link = true ) {
+
+	/**
+	 * @param array $bits
+	 * @param string $orig Original input string, to be returned
+	 *  on formatting failure.
+	 * @param bool $link
+	 * @return string
+	 */
+	private function formatDate( $bits, $orig, $link = true ) {
 		$format = $this->targets[$this->mTarget];
-		
-		if (!$link) {
+
+		if ( !$link ) {
 			// strip piped links
 			$format = preg_replace( '/\[\[[^|]+\|([^\]]+)\]\]/', '$1', $format );
 			// strip remaining links
-			$format = str_replace( array( '[[', ']]' ), '', $format );
+			$format = str_replace( [ '[[', ']]' ], '', $format );
 		}
 
 		# Construct new date
 		$text = '';
 		$fail = false;
-		
+
 		// Pre-generate y/Y stuff because we need the year for the <span> title.
-		if ( !isset( $bits['y'] ) && isset( $bits['Y'] ) )
+		if ( !isset( $bits['y'] ) && isset( $bits['Y'] ) ) {
 			$bits['y'] = $this->makeIsoYear( $bits['Y'] );
-		if ( !isset( $bits['Y'] ) && isset( $bits['y'] ) )
+		}
+		if ( !isset( $bits['Y'] ) && isset( $bits['y'] ) ) {
 			$bits['Y'] = $this->makeNormalYear( $bits['y'] );
-			
+		}
+
 		if ( !isset( $bits['m'] ) ) {
 			$m = $this->makeIsoMonth( $bits['F'] );
 			if ( !$m || $m == '00' ) {
@@ -218,12 +268,13 @@ class DateFormatter
 				$bits['m'] = $m;
 			}
 		}
-		
-		if ( !isset($bits['d']) ) {
+
+		if ( !isset( $bits['d'] ) ) {
 			$bits['d'] = sprintf( '%02d', $bits['j'] );
 		}
 
-		for ( $p=0; $p < strlen( $format ); $p++ ) {
+		$formatLength = strlen( $format );
+		for ( $p = 0; $p < $formatLength; $p++ ) {
 			$char = $format[$p];
 			switch ( $char ) {
 				case 'd': # ISO day of month
@@ -236,7 +287,7 @@ class DateFormatter
 					$text .= $bits['y'];
 					break;
 				case 'j': # ordinary day of month
-					if ( !isset($bits['j']) ) {
+					if ( !isset( $bits['j'] ) ) {
 						$text .= intval( $bits['d'] );
 					} else {
 						$text .= $bits['j'];
@@ -244,12 +295,11 @@ class DateFormatter
 					break;
 				case 'F': # long month
 					if ( !isset( $bits['F'] ) ) {
-						$m = intval($bits['m']);
+						$m = intval( $bits['m'] );
 						if ( $m > 12 || $m < 1 ) {
 							$fail = true;
 						} else {
-							global $wgContLang;
-							$text .= $wgContLang->getMonthName( $m );
+							$text .= $this->lang->getMonthName( $m );
 						}
 					} else {
 						$text .= ucfirst( $bits['F'] );
@@ -263,57 +313,58 @@ class DateFormatter
 			}
 		}
 		if ( $fail ) {
-			$text = $matches[0];
+			// This occurs when parsing a date with day or month outside the bounds
+			// of possibilities.
+			$text = $orig;
 		}
-		
-		$isoBits = array();
-		if ( isset($bits['y']) )
+
+		$isoBits = [];
+		if ( isset( $bits['y'] ) ) {
 			$isoBits[] = $bits['y'];
+		}
 		$isoBits[] = $bits['m'];
 		$isoBits[] = $bits['d'];
 		$isoDate = implode( '-', $isoBits );
-		
+
 		// Output is not strictly HTML (it's wikitext), but <span> is whitelisted.
 		$text = Html::rawElement( 'span',
-					array( 'class' => 'mw-formatted-date', 'title' => $isoDate ), $text );
-		
+					[ 'class' => 'mw-formatted-date', 'title' => $isoDate ], $text );
+
 		return $text;
 	}
 
 	/**
-	 * @todo document
+	 * Return a regex that can be used to find month names in string
+	 * @return string regex to find the months with
 	 */
-	function getMonthRegex() {
-		global $wgContLang;
-		$names = array();
-		for( $i = 1; $i <= 12; $i++ ) {
-			$names[] = $wgContLang->getMonthName( $i );
-			$names[] = $wgContLang->getMonthAbbreviation( $i );
+	private function getMonthRegex() {
+		$names = [];
+		for ( $i = 1; $i <= 12; $i++ ) {
+			$names[] = $this->lang->getMonthName( $i );
+			$names[] = $this->lang->getMonthAbbreviation( $i );
 		}
 		return implode( '|', $names );
 	}
 
 	/**
 	 * Makes an ISO month, e.g. 02, from a month name
-	 * @param $monthName String: month name
+	 * @param string $monthName Month name
 	 * @return string ISO month name
 	 */
-	function makeIsoMonth( $monthName ) {
-		global $wgContLang;
-
-		$n = $this->xMonths[$wgContLang->lc( $monthName )];
+	private function makeIsoMonth( $monthName ) {
+		$n = $this->xMonths[$this->lang->lc( $monthName )];
 		return sprintf( '%02d', $n );
 	}
 
 	/**
-	 * @todo document
-	 * @param $year String: Year name
+	 * Make an ISO year from a year name, for instance: '-1199' from '1200 BC'
+	 * @param string $year Year name
 	 * @return string ISO year name
 	 */
-	function makeIsoYear( $year ) {
+	private function makeIsoYear( $year ) {
 		# Assumes the year is in a nice format, as enforced by the regex
 		if ( substr( $year, -2 ) == 'BC' ) {
-			$num = intval(substr( $year, 0, -3 )) - 1;
+			$num = intval( substr( $year, 0, -3 ) ) - 1;
 			# PHP bug note: sprintf( "%04d", -1 ) fails poorly
 			$text = sprintf( '-%04d', $num );
 
@@ -324,11 +375,14 @@ class DateFormatter
 	}
 
 	/**
-	 * @todo document
+	 * Make a year one from an ISO year, for instance: '400 BC' from '-0399'.
+	 * @param string $iso ISO year
+	 * @return int|string int representing year number in case of AD dates, or string containing
+	 *   year number and 'BC' at the end otherwise.
 	 */
-	function makeNormalYear( $iso ) {
+	private function makeNormalYear( $iso ) {
 		if ( $iso[0] == '-' ) {
-			$text = (intval( substr( $iso, 1 ) ) + 1) . ' BC';
+			$text = ( intval( substr( $iso, 1 ) ) + 1 ) . ' BC';
 		} else {
 			$text = intval( $iso );
 		}

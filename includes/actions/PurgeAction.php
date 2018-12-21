@@ -1,8 +1,6 @@
 <?php
 /**
- * Formats credits for articles
- *
- * Copyright 2004, Evan Prodromou <evan@wikitravel.org>.
+ * User-requested page cache purging.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,19 +18,19 @@
  *
  * @file
  * @ingroup Actions
- * @author <evan@wikitravel.org>
  */
 
+/**
+ * User-requested page cache purging
+ *
+ * @ingroup Actions
+ */
 class PurgeAction extends FormAction {
 
 	private $redirectParams;
 
 	public function getName() {
 		return 'purge';
-	}
-
-	public function getRestriction() {
-		return null;
 	}
 
 	public function requiresUnblock() {
@@ -43,36 +41,31 @@ class PurgeAction extends FormAction {
 		return '';
 	}
 
-	/**
-	 * Just get an empty form with a single submit button
-	 * @return array
-	 */
-	protected function getFormFields() {
-		return array();
-	}
-
 	public function onSubmit( $data ) {
-		$this->page->doPurge();
-		return true;
+		return $this->page->doPurge();
 	}
 
-	/**
-	 * purge is slightly wierd because it can be either formed or formless depending
-	 * on user permissions
-	 */
 	public function show() {
 		$this->setHeaders();
 
 		// This will throw exceptions if there's a problem
 		$this->checkCanExecute( $this->getUser() );
 
-		if ( $this->getUser()->isAllowed( 'purge' ) ) {
-			$this->redirectParams = wfArrayToCGI( array_diff_key(
+		$user = $this->getUser();
+
+		if ( $user->pingLimiter( 'purge' ) ) {
+			// TODO: Display actionthrottledtext
+			return;
+		}
+
+		if ( $this->getRequest()->wasPosted() ) {
+			$this->redirectParams = wfArrayToCgi( array_diff_key(
 				$this->getRequest()->getQueryValues(),
-				array( 'title' => null, 'action' => null )
+				[ 'title' => null, 'action' => null ]
 			) );
-			$this->onSubmit( array() );
-			$this->onSuccess();
+			if ( $this->onSubmit( [] ) ) {
+				$this->onSuccess();
+			}
 		} else {
 			$this->redirectParams = $this->getRequest()->getVal( 'redirectparams', '' );
 			$form = $this->getForm();
@@ -82,19 +75,35 @@ class PurgeAction extends FormAction {
 		}
 	}
 
-	protected function alterForm( HTMLForm $form ) {
-		$form->setSubmitText( wfMsg( 'confirm_purge_button' ) );
+	protected function usesOOUI() {
+		return true;
 	}
 
-	protected function preText() {
-		return wfMessage( 'confirm-purge-top' )->parse();
+	protected function getFormFields() {
+		return [
+			'intro' => [
+				'type' => 'info',
+				'vertical-label' => true,
+				'raw' => true,
+				'default' => $this->msg( 'confirm-purge-top' )->parse()
+			]
+		];
+	}
+
+	protected function alterForm( HTMLForm $form ) {
+		$form->setWrapperLegendMsg( 'confirm-purge-title' );
+		$form->setSubmitTextMsg( 'confirm_purge_button' );
 	}
 
 	protected function postText() {
-		return wfMessage( 'confirm-purge-bottom' )->parse();
+		return $this->msg( 'confirm-purge-bottom' )->parse();
 	}
 
 	public function onSuccess() {
-		$this->getOutput()->redirect( $this->getTitle()->getFullUrl( $this->redirectParams ) );
+		$this->getOutput()->redirect( $this->getTitle()->getFullURL( $this->redirectParams ) );
+	}
+
+	public function doesWrites() {
+		return true;
 	}
 }

@@ -1,6 +1,8 @@
 <?php
 /**
- * This come from r75429 message
+ * Benchmark for wfIsWindows().
+ *
+ * This come from r75429 message.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,44 +20,49 @@
  * http://www.gnu.org/copyleft/gpl.html
  *
  * @file
- * @ingroup Maintenance
- * @author Platonides 
+ * @ingroup Benchmark
+ * @author  Platonides
  */
 
-require_once( dirname( __FILE__ ) . '/Benchmarker.php' );
-class bench_wfIsWindows extends Benchmarker {
+require_once __DIR__ . '/Benchmarker.php';
 
+/**
+ * Maintenance script that benchmarks wfIsWindows().
+ *
+ * @ingroup Benchmark
+ */
+class BenchWfIsWindows extends Benchmarker {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Benchmark for wfIsWindows.";
+		$this->addDescription( 'Benchmark for wfIsWindows.' );
 	}
 
 	public function execute() {
-		$this->bench( array(
-			array( 'function' => array( $this, 'wfIsWindows' ) ),
-			array( 'function' => array( $this, 'wfIsWindowsCached' ) ),
-		));
-		print $this->getFormattedResults();
+		$this->bench( [
+			[ 'function' => [ $this, 'wfIsWindows' ] ],
+			[ 'function' => [ $this, 'wfIsWindowsCached' ] ],
+		] );
 	}
 
-	static function is_win() {
-		return substr( php_uname(), 0, 7 ) == 'Windows' ;
+	protected static function is_win() {
+		return substr( php_uname(), 0, 7 ) == 'Windows';
 	}
 
 	// bench function 1
-	function wfIsWindows() {
+	protected function wfIsWindows() {
 		return self::is_win();
 	}
 
 	// bench function 2
-	function wfIsWindowsCached() {
+	protected function wfIsWindowsCached() {
 		static $isWindows = null;
-		if( $isWindows == null ) {
+		if ( $isWindows == null ) {
 			$isWindows = self::is_win();
 		}
+
 		return $isWindows;
 	}
 }
 
-$maintClass = 'bench_wfIsWindows';
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = BenchWfIsWindows::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

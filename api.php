@@ -1,9 +1,16 @@
 <?php
-
 /**
- * API for MediaWiki 1.8+
+ * This file is the entry point for all API queries.
  *
- * Copyright (C) 2006 Yuri Astrakhan <Firstname><Lastname>@gmail.com
+ * It begins by checking whether the API is enabled on this wiki; if not,
+ * it informs the user that s/he should set $wgEnableAPI to true and exits.
+ * Otherwise, it constructs a new ApiMain using the parameter passed to it
+ * as an argument in the URL ('?action=') and with write-enabled set to the
+ * value of $wgEnableWriteAPI as specified in LocalSettings.php.
+ * It then invokes "execute()" on the ApiMain object instance, which
+ * produces output in the format specified in the URL.
+ *
+ * Copyright © 2006 Yuri Astrakhan <Firstname><Lastname>@gmail.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,143 +30,100 @@
  * @file
  */
 
-/**
- * This file is the entry point for all API queries. It begins by checking
- * whether the API is enabled on this wiki; if not, it informs the user that
- * s/he should set $wgEnableAPI to true and exits. Otherwise, it constructs
- * a new ApiMain using the parameter passed to it as an argument in the URL
- * ('?action=') and with write-enabled set to the value of $wgEnableWriteAPI
- * as specified in LocalSettings.php. It then invokes "execute()" on the
- * ApiMain object instance, which produces output in the format sepecified
- * in the URL.
- */
+use MediaWiki\Logger\LegacyLogger;
 
 // So extensions (and other code) can check whether they're running in API mode
 define( 'MW_API', true );
 
-// Include global constants, including MW_VERSION and MW_MIN_PHP_VERSION
-require_once( dirname( __FILE__ ) . '/includes/Defines.php' );
+require __DIR__ . '/includes/WebStart.php';
 
-// We want a plain message on catastrophic errors that machines can identify
-function wfDie( $msg = '' ) {
-	header( $_SERVER['SERVER_PROTOCOL'] . ' 500 MediaWiki configuration Error', true, 500 );
-	echo $msg;
-	die( 1 );
-}
-
-// Die on unsupported PHP versions
-if( !function_exists( 'version_compare' ) || version_compare( phpversion(), MW_MIN_PHP_VERSION ) < 0 ){
-	$version = htmlspecialchars( MW_VERSION );
-	$phpversion = htmlspecialchars( MW_MIN_PHP_VERSION );
-	wfDie( "MediaWiki $version requires at least PHP version $phpversion." );
-}
-
-// Initialise common code.
-require ( dirname( __FILE__ ) . '/includes/WebStart.php' );
-
-wfProfileIn( 'api.php' );
 $starttime = microtime( true );
 
 // URL safety checks
-//
-// See RawPage.php for details; summary is that MSIE can override the
-// Content-Type if it sees a recognized extension on the URL, such as
-// might be appended via PATH_INFO after 'api.php'.
-//
-// Some data formats can end up containing unfiltered user-provided data
-// which will end up triggering HTML detection and execution, hence
-// XSS injection and all that entails.
-//
-if ( $wgRequest->isPathInfoBad() ) {
-	wfHttpError( 403, 'Forbidden',
-		'Invalid file extension found in PATH_INFO or QUERY_STRING.' );
+if ( !$wgRequest->checkUrlExtension() ) {
 	return;
+}
+
+// Pathinfo can be used for stupid things. We don't support it for api.php at
+// all, so error out if it's present.
+if ( isset( $_SERVER['PATH_INFO'] ) && $_SERVER['PATH_INFO'] != '' ) {
+	$correctUrl = wfAppendQuery( wfScript( 'api' ), $wgRequest->getQueryValues() );
+	$correctUrl = wfExpandUrl( $correctUrl, PROTO_CANONICAL );
+	header( "Location: $correctUrl", true, 301 );
+	echo 'This endpoint does not support "path info", i.e. extra text between "api.php"'
+		. 'and the "?". Remove any such text and try again.';
+	die( 1 );
 }
 
 // Verify that the API has not been disabled
 if ( !$wgEnableAPI ) {
-	wfDie( 'MediaWiki API is not enabled for this site. Add the following line to your LocalSettings.php'
-		. '<pre><b>$wgEnableAPI=true;</b></pre>'
-	);
-}
-
-// Selectively allow cross-site AJAX
-
-/*
- * Helper function to convert wildcard string into a regex
- * '*' => '.*?'
- * '?' => '.'
- * @ return string
- */
-function convertWildcard( $search ) {
-	$search = preg_quote( $search, '/' );
-	$search = str_replace(
-		array( '\*', '\?' ),
-		array( '.*?', '.' ),
-		$search
-	);
-	return "/$search/";
-}
-
-if ( $wgCrossSiteAJAXdomains && isset( $_SERVER['HTTP_ORIGIN'] ) ) {
-	$exceptions = array_map( 'convertWildcard', $wgCrossSiteAJAXdomainExceptions );
-	$regexes = array_map( 'convertWildcard', $wgCrossSiteAJAXdomains );
-	foreach ( $regexes as $regex ) {
-		if ( preg_match( $regex, $_SERVER['HTTP_ORIGIN'] ) ) {
-			foreach ( $exceptions as $exc ) { // Check against exceptions
-				if ( preg_match( $exc, $_SERVER['HTTP_ORIGIN'] ) ) {
-					break 2;
-				}
-			}
-			header( "Access-Control-Allow-Origin: {$_SERVER['HTTP_ORIGIN']}" );
-			header( 'Access-Control-Allow-Credentials: true' );
-			break;
-		}
-	}
+	header( $_SERVER['SERVER_PROTOCOL'] . ' 500 MediaWiki configuration Error', true, 500 );
+	echo 'MediaWiki API is not enabled for this site. Add the following line to your LocalSettings.php'
+		. '<pre><b>$wgEnableAPI=true;</b></pre>';
+	die( 1 );
 }
 
 // Set a dummy $wgTitle, because $wgTitle == null breaks various things
 // In a perfect world this wouldn't be necessary
-$wgTitle = Title::makeTitle( NS_MAIN, 'API' );
+$wgTitle = Title::makeTitle( NS_SPECIAL, 'Badtitle/dummy title for API calls set in api.php' );
 
-/* Construct an ApiMain with the arguments passed via the URL. What we get back
- * is some form of an ApiMain, possibly even one that produces an error message,
- * but we don't care here, as that is handled by the ctor.
- */
-$processor = new ApiMain( $wgRequest, $wgEnableWriteAPI );
+// RequestContext will read from $wgTitle, but it will also whine about it.
+// In a perfect world this wouldn't be necessary either.
+RequestContext::getMain()->setTitle( $wgTitle );
+
+try {
+	/* Construct an ApiMain with the arguments passed via the URL. What we get back
+	 * is some form of an ApiMain, possibly even one that produces an error message,
+	 * but we don't care here, as that is handled by the constructor.
+	 */
+	$processor = new ApiMain( RequestContext::getMain(), $wgEnableWriteAPI );
+
+	// Last chance hook before executing the API
+	Hooks::run( 'ApiBeforeMain', [ &$processor ] );
+	if ( !$processor instanceof ApiMain ) {
+		throw new MWException( 'ApiBeforeMain hook set $processor to a non-ApiMain class' );
+	}
+} catch ( Exception $e ) {
+	// Crap. Try to report the exception in API format to be friendly to clients.
+	ApiMain::handleApiBeforeMainException( $e );
+	$processor = false;
+}
 
 // Process data & print results
-$processor->execute();
-
-// Execute any deferred updates
-wfDoUpdates();
+if ( $processor ) {
+	$processor->execute();
+}
 
 // Log what the user did, for book-keeping purposes.
 $endtime = microtime( true );
-wfProfileOut( 'api.php' );
-wfLogProfilingData();
 
 // Log the request
 if ( $wgAPIRequestLog ) {
-	$items = array(
-			wfTimestamp( TS_MW ),
-			$endtime - $starttime,
-			wfGetIP(),
-			$_SERVER['HTTP_USER_AGENT']
-	);
+	$items = [
+		wfTimestamp( TS_MW ),
+		$endtime - $starttime,
+		$wgRequest->getIP(),
+		$wgRequest->getHeader( 'User-agent' )
+	];
 	$items[] = $wgRequest->wasPosted() ? 'POST' : 'GET';
-	$module = $processor->getModule();
-	if ( $module->mustBePosted() ) {
-		$items[] = "action=" . $wgRequest->getVal( 'action' );
+	if ( $processor ) {
+		try {
+			$manager = $processor->getModuleManager();
+			$module = $manager->getModule( $wgRequest->getVal( 'action' ), 'action' );
+		} catch ( Exception $ex ) {
+			$module = null;
+		}
+		if ( !$module || $module->mustBePosted() ) {
+			$items[] = "action=" . $wgRequest->getVal( 'action' );
+		} else {
+			$items[] = wfArrayToCgi( $wgRequest->getValues() );
+		}
 	} else {
-		$items[] = wfArrayToCGI( $wgRequest->getValues() );
+		$items[] = "failed in ApiBeforeMain";
 	}
-	wfErrorLog( implode( ',', $items ) . "\n", $wgAPIRequestLog );
+	LegacyLogger::emit( implode( ',', $items ) . "\n", $wgAPIRequestLog );
 	wfDebug( "Logged API request to $wgAPIRequestLog\n" );
 }
 
-// Shut down the database.  foo()->bar() syntax is not supported in PHP4: we won't ever actually
-// get here to worry about whether this should be = or =&, but the file has to parse properly.
-$lb = wfGetLBFactory();
-$lb->shutdown();
-
+$mediawiki = new MediaWiki();
+$mediawiki->doPostOutputShutdown( 'fast' );

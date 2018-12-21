@@ -24,40 +24,89 @@
  * @author Ævar Arnfjörð Bjarmason <avarab@gmail.com>
  */
 
+use Wikimedia\Rdbms\IResultWrapper;
+use Wikimedia\Rdbms\IDatabase;
+
 /**
  * A special page that list pages that have highest category count
  *
  * @ingroup SpecialPage
  */
 class MostcategoriesPage extends QueryPage {
-
 	function __construct( $name = 'Mostcategories' ) {
 		parent::__construct( $name );
 	}
 
-	function isExpensive() { return true; }
-	function isSyndicated() { return false; }
-
-	function getQueryInfo() {
-		return array (
-			'tables' => array ( 'categorylinks', 'page' ),
-			'fields' => array ( 'page_namespace AS namespace',
-					'page_title AS title',
-					'COUNT(*) AS value' ),
-			'conds' => array ( 'page_namespace' => MWNamespace::getContentNamespaces() ),
-			'options' => array ( 'HAVING' => 'COUNT(*) > 1',
-				'GROUP BY' => 'page_namespace, page_title' ),
-			'join_conds' => array ( 'page' => array ( 'LEFT JOIN',
-					'page_id = cl_from' ) )
-		);
+	public function isExpensive() {
+		return true;
 	}
 
-	function formatResult( $skin, $result ) {
-		global $wgLang;
-		$title = Title::makeTitleSafe( $result->namespace, $result->title );
+	function isSyndicated() {
+		return false;
+	}
 
-		$count = wfMsgExt( 'ncategories', array( 'parsemag', 'escape' ), $wgLang->formatNum( $result->value ) );
-		$link = $skin->link( $title );
-		return wfSpecialList( $link, $count );
+	public function getQueryInfo() {
+		return [
+			'tables' => [ 'categorylinks', 'page' ],
+			'fields' => [
+				'namespace' => 'page_namespace',
+				'title' => 'page_title',
+				'value' => 'COUNT(*)'
+			],
+			'conds' => [ 'page_namespace' => MWNamespace::getContentNamespaces() ],
+			'options' => [
+				'HAVING' => 'COUNT(*) > 1',
+				'GROUP BY' => [ 'page_namespace', 'page_title' ]
+			],
+			'join_conds' => [
+				'page' => [
+					'LEFT JOIN',
+					'page_id = cl_from'
+				]
+			]
+		];
+	}
+
+	/**
+	 * @param IDatabase $db
+	 * @param IResultWrapper $res
+	 */
+	function preprocessResults( $db, $res ) {
+		$this->executeLBFromResultWrapper( $res );
+	}
+
+	/**
+	 * @param Skin $skin
+	 * @param object $result Result row
+	 * @return string
+	 */
+	function formatResult( $skin, $result ) {
+		$title = Title::makeTitleSafe( $result->namespace, $result->title );
+		if ( !$title ) {
+			return Html::element(
+				'span',
+				[ 'class' => 'mw-invalidtitle' ],
+				Linker::getInvalidTitleDescription(
+					$this->getContext(),
+					$result->namespace,
+					$result->title
+				)
+			);
+		}
+
+		$linkRenderer = $this->getLinkRenderer();
+		if ( $this->isCached() ) {
+			$link = $linkRenderer->makeLink( $title );
+		} else {
+			$link = $linkRenderer->makeKnownLink( $title );
+		}
+
+		$count = $this->msg( 'ncategories' )->numParams( $result->value )->escaped();
+
+		return $this->getLanguage()->specialList( $link, $count );
+	}
+
+	protected function getGroupName() {
+		return 'highuse';
 	}
 }

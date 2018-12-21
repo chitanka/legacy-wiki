@@ -26,62 +26,30 @@
  *
  * @ingroup SpecialPage
  */
-class SpecialFilepath extends SpecialPage {
-
-	function __construct() {
+class SpecialFilepath extends RedirectSpecialPage {
+	public function __construct() {
 		parent::__construct( 'Filepath' );
+		$this->mAllowedRedirectParams = [ 'width', 'height' ];
 	}
 
-	function execute( $par ) {
-		global $wgRequest, $wgOut;
+	/**
+	 * Implement by redirecting through Special:Redirect/file.
+	 *
+	 * @param string|null $par
+	 * @return Title
+	 */
+	public function getRedirect( $par ) {
+		$file = $par ?: $this->getRequest()->getText( 'file' );
 
-		$this->setHeaders();
-		$this->outputHeader();
-
-		$file = !is_null( $par ) ? $par : $wgRequest->getText( 'file' );
-
-		$title = Title::makeTitleSafe( NS_FILE, $file );
-
-		if ( ! $title instanceof Title || $title->getNamespace() != NS_FILE ) {
-			$this->showForm( $title );
+		if ( $file ) {
+			$argument = "file/$file";
 		} else {
-			$file = wfFindFile( $title );
-
-			if ( $file && $file->exists() ) {
-				// Default behaviour: Use the direct link to the file.
-				$url = $file->getURL();
-				$width = $wgRequest->getInt( 'width', -1 );
-				$height = $wgRequest->getInt( 'height', -1 );
-
-				// If a width is requested...
-				if ( $width != -1 ) {
-					$mto = $file->transform( array( 'width' => $width, 'height' => $height ) );
-					// ... and we can
-					if ( $mto && !$mto->isError() ) {
-						// ... change the URL to point to a thumbnail.
-						$url = $mto->getURL();
-					}
-				}
-				$wgOut->redirect( $url );
-			} else {
-				$wgOut->setStatusCode( 404 );
-				$this->showForm( $title );
-			}
+			$argument = 'file';
 		}
+		return SpecialPage::getSafeTitleFor( 'Redirect', $argument );
 	}
 
-	function showForm( $title ) {
-		global $wgOut, $wgScript;
-
-		$wgOut->addHTML(
-			Html::openElement( 'form', array( 'method' => 'get', 'action' => $wgScript, 'id' => 'specialfilepath' ) ) .
-			Html::openElement( 'fieldset' ) .
-			Html::element( 'legend', null, wfMsg( 'filepath' ) ) .
-			Html::hidden( 'title', $this->getTitle()->getPrefixedText() ) .
-			Xml::inputLabel( wfMsg( 'filepath-page' ), 'file', 'file', 25, is_object( $title ) ? $title->getText() : '' ) . ' ' .
-			Xml::submitButton( wfMsg( 'filepath-submit' ) ) . "\n" .
-			Html::closeElement( 'fieldset' ) .
-			Html::closeElement( 'form' )
-		);
+	protected function getGroupName() {
+		return 'media';
 	}
 }

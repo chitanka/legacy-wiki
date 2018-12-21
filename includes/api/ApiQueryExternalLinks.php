@@ -1,10 +1,6 @@
 <?php
 /**
- *
- *
- * Created on May 13, 2007
- *
- * Copyright © 2006 Yuri Astrakhan <Firstname><Lastname>@gmail.com
+ * Copyright © 2006 Yuri Astrakhan "<Firstname><Lastname>@gmail.com"
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,11 +20,6 @@
  * @file
  */
 
-if ( !defined( 'MEDIAWIKI' ) ) {
-	// Eclipse helper - will be ignored in production
-	require_once( "ApiQueryBase.php" );
-}
-
 /**
  * A query module to list all external URLs found on a given set of pages.
  *
@@ -36,7 +27,7 @@ if ( !defined( 'MEDIAWIKI' ) ) {
  */
 class ApiQueryExternalLinks extends ApiQueryBase {
 
-	public function __construct( $query, $moduleName ) {
+	public function __construct( ApiQuery $query, $moduleName ) {
 		parent::__construct( $query, $moduleName, 'el' );
 	}
 
@@ -50,10 +41,10 @@ class ApiQueryExternalLinks extends ApiQueryBase {
 		$query = $params['query'];
 		$protocol = ApiQueryExtLinksUsage::getProtocolPrefix( $params['protocol'] );
 
-		$this->addFields( array(
+		$this->addFields( [
 			'el_from',
 			'el_to'
-		) );
+		] );
 
 		$this->addTables( 'externallinks' );
 		$this->addWhereFld( 'el_from', array_keys( $this->getPageSet()->getGoodTitles() ) );
@@ -69,8 +60,14 @@ class ApiQueryExternalLinks extends ApiQueryBase {
 			$this->addOption( 'ORDER BY', 'el_from' );
 		}
 
+		// If we're querying all protocols, use DISTINCT to avoid repeating protocol-relative links twice
+		if ( $protocol === null ) {
+			$this->addOption( 'DISTINCT' );
+		}
+
 		$this->addOption( 'LIMIT', $params['limit'] + 1 );
-		if ( !is_null( $params['offset'] ) ) {
+		$offset = isset( $params['offset'] ) ? $params['offset'] : 0;
+		if ( $offset ) {
 			$this->addOption( 'OFFSET', $params['offset'] );
 		}
 
@@ -81,14 +78,19 @@ class ApiQueryExternalLinks extends ApiQueryBase {
 			if ( ++$count > $params['limit'] ) {
 				// We've reached the one extra which shows that
 				// there are additional pages to be had. Stop here...
-				$this->setContinueEnumParameter( 'offset', @$params['offset'] + $params['limit'] );
+				$this->setContinueEnumParameter( 'offset', $offset + $params['limit'] );
 				break;
 			}
-			$entry = array();
-			ApiResult::setContent( $entry, $row->el_to );
+			$entry = [];
+			$to = $row->el_to;
+			// expand protocol-relative urls
+			if ( $params['expandurl'] ) {
+				$to = wfExpandUrl( $to, PROTO_CANONICAL );
+			}
+			ApiResult::setContentValue( $entry, 'url', $to );
 			$fit = $this->addPageSubItem( $row->el_from, $entry );
 			if ( !$fit ) {
-				$this->setContinueEnumParameter( 'offset', @$params['offset'] + $count - 1 );
+				$this->setContinueEnumParameter( 'offset', $offset + $count - 1 );
 				break;
 			}
 		}
@@ -99,56 +101,35 @@ class ApiQueryExternalLinks extends ApiQueryBase {
 	}
 
 	public function getAllowedParams() {
-		return array(
-			'limit' => array(
+		return [
+			'limit' => [
 				ApiBase::PARAM_DFLT => 10,
 				ApiBase::PARAM_TYPE => 'limit',
 				ApiBase::PARAM_MIN => 1,
 				ApiBase::PARAM_MAX => ApiBase::LIMIT_BIG1,
 				ApiBase::PARAM_MAX2 => ApiBase::LIMIT_BIG2
-			),
-			'offset' => array(
-				ApiBase::PARAM_TYPE => 'integer'
-			),
-			'protocol' => array(
+			],
+			'offset' => [
+				ApiBase::PARAM_TYPE => 'integer',
+				ApiBase::PARAM_HELP_MSG => 'api-help-param-continue',
+			],
+			'protocol' => [
 				ApiBase::PARAM_TYPE => ApiQueryExtLinksUsage::prepareProtocols(),
 				ApiBase::PARAM_DFLT => '',
-			),
+			],
 			'query' => null,
-		);
+			'expandurl' => false,
+		];
 	}
 
-	public function getParamDescription() {
-		$p = $this->getModulePrefix();
-		return array(
-			'limit' => 'How many links to return',
-			'offset' => 'When more results are available, use this to continue',
-			'protocol' => array(
-				"Protocol of the url. If empty and {$p}query set, the protocol is http.",
-				"Leave both this and {$p}query empty to list all external links"
-			),
-			'query' => 'Search string without protocol. Useful for checking whether a certain page contains a certain external url',
-		);
+	protected function getExamplesMessages() {
+		return [
+			'action=query&prop=extlinks&titles=Main%20Page'
+				=> 'apihelp-query+extlinks-example-simple',
+		];
 	}
 
-	public function getDescription() {
-		return 'Returns all external urls (not interwikies) from the given page(s)';
-	}
-
-	public function getPossibleErrors() {
-		return array_merge( parent::getPossibleErrors(), array(
-			array( 'code' => 'bad_query', 'info' => 'Invalid query' ),
-		) );
-	}
-
-	protected function getExamples() {
-		return array(
-			'Get a list of external links on the [[Main Page]]:',
-			'  api.php?action=query&prop=extlinks&titles=Main%20Page',
-		);
-	}
-
-	public function getVersion() {
-		return __CLASS__ . ': $Id: ApiQueryExternalLinks.php 84736 2011-03-25 10:37:56Z reedy $';
+	public function getHelpUrls() {
+		return 'https://www.mediawiki.org/wiki/Special:MyLanguage/API:Extlinks';
 	}
 }

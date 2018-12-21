@@ -1,74 +1,45 @@
 <?php
 /**
- * This does the initial setup for a web request.
- * It does some security checks, starts the profiler and loads the
- * configuration, and optionally loads Setup.php depending on whether
- * MW_NO_SETUP is defined.
+ * This does the initial set up for a web request.
+ *
+ * It does some security checks, loads autoloaders, constants, and
+ * global functions, starts the profiler, loads the configuration,
+ * and loads Setup.php, which loads extensions using the extension
+ * registration system and initializes the application's global state.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * http://www.gnu.org/copyleft/gpl.html
  *
  * @file
  */
 
-/**
- * Detect compiled mode by looking for a function that only exists if compiled 
- * in. Note that we can't use function_exists(), because it is terribly broken 
- * under HipHop due to the "volatile" feature.
- */
-function wfDetectCompiledMode() {
-	try {
-		$r = new ReflectionFunction( 'wfHipHopCompilerVersion' );
-	} catch ( ReflectionException $e ) {
-		$r = false;
-	}
-	return $r !== false;
+if ( ini_get( 'mbstring.func_overload' ) ) {
+	die( 'MediaWiki does not support installations where mbstring.func_overload is non-zero.' );
 }
 
-# Protect against register_globals
-# This must be done before any globals are set by the code
-if ( ini_get( 'register_globals' ) ) {
-	if ( isset( $_REQUEST['GLOBALS'] ) ) {
-		die( '<a href="http://www.hardened-php.net/globals-problem">$GLOBALS overwrite vulnerability</a>');
-	}
-	$verboten = array(
-		'GLOBALS',
-		'_SERVER',
-		'HTTP_SERVER_VARS',
-		'_GET',
-		'HTTP_GET_VARS',
-		'_POST',
-		'HTTP_POST_VARS',
-		'_COOKIE',
-		'HTTP_COOKIE_VARS',
-		'_FILES',
-		'HTTP_POST_FILES',
-		'_ENV',
-		'HTTP_ENV_VARS',
-		'_REQUEST',
-		'_SESSION',
-		'HTTP_SESSION_VARS'
-	);
-	foreach ( $_REQUEST as $name => $value ) {
-		if( in_array( $name, $verboten ) ) {
-			header( "HTTP/1.1 500 Internal Server Error" );
-			echo "register_globals security paranoia: trying to overwrite superglobals, aborting.";
-			die( -1 );
-		}
-		unset( $GLOBALS[$name] );
-	}
-}
-
-# bug 15461: Make IE8 turn off content sniffing. Everbody else should ignore this
+# T17461: Make IE8 turn off content sniffing. Everybody else should ignore this
 # We're adding it here so that it's *always* set, even for alternate entry
 # points and when $wgOut gets disabled or overridden.
 header( 'X-Content-Type-Options: nosniff' );
 
-$wgRequestTime = microtime(true);
-# getrusage() does not exist on the Microsoft Windows platforms, catching this
-if ( function_exists ( 'getrusage' ) ) {
-	$wgRUstart = getrusage();
-} else {
-	$wgRUstart = array();
-}
-unset( $IP );
+/**
+ * @var float Request start time as fractional seconds since epoch
+ * @deprecated since 1.25; use $_SERVER['REQUEST_TIME_FLOAT'] or
+ *   WebRequest::getElapsedTime() instead.
+ */
+$wgRequestTime = $_SERVER['REQUEST_TIME_FLOAT'];
 
 # Valid web server entry point, enable includes.
 # Please don't move this line to includes/Defines.php. This line essentially
@@ -77,100 +48,68 @@ unset( $IP );
 # its purpose.
 define( 'MEDIAWIKI', true );
 
-# Full path to working directory.
-# Makes it possible to for example to have effective exclude path in apc.
-# Also doesn't break installations using symlinked includes, like
-# dirname( __FILE__ ) would do.
+# Full path to the installation directory.
 $IP = getenv( 'MW_INSTALL_PATH' );
 if ( $IP === false ) {
-	$IP = realpath( '.' );
+	$IP = dirname( __DIR__ );
 }
 
-if ( wfDetectCompiledMode() ) {
-	define( 'MW_COMPILED', 1 );
-}
-
-if ( !defined( 'MW_COMPILED' ) ) {
-	# Get MWInit class
-	require_once( "$IP/includes/Init.php" );
-
-	# Start the autoloader, so that extensions can derive classes from core files
-	require_once( "$IP/includes/AutoLoader.php" );
-
-	# Start profiler
-	# FIXME: rewrite wfProfileIn/wfProfileOut so that they can work in compiled mode
-	require_once( "$IP/includes/profiler/Profiler.php" );
-	if ( file_exists( "$IP/StartProfiler.php" ) ) {
-		require_once( "$IP/StartProfiler.php" );
-	}
-
-	# Load up some global defines.
-	require_once( "$IP/includes/Defines.php" );
-}
-
-wfProfileIn( 'WebStart.php-conf' );
-
-# Load default settings
-require_once( MWInit::compiledPath( "includes/DefaultSettings.php" ) );
-
-if ( defined( 'MW_CONFIG_CALLBACK' ) ) {
-	# Use a callback function to configure MediaWiki
-	MWFunction::call( MW_CONFIG_CALLBACK );
-} else {
+// If no LocalSettings file exists, try to display an error page
+// (use a callback because it depends on TemplateParser)
+if ( !defined( 'MW_CONFIG_CALLBACK' ) ) {
 	if ( !defined( 'MW_CONFIG_FILE' ) ) {
-		define('MW_CONFIG_FILE', MWInit::interpretedPath( 'LocalSettings.php' ) );
+		define( 'MW_CONFIG_FILE', "$IP/LocalSettings.php" );
 	}
-
-	# LocalSettings.php is the per site customization file. If it does not exist
-	# the wiki installer needs to be launched or the generated file uploaded to
-	# the root wiki directory
-	if( !file_exists( MW_CONFIG_FILE ) ) {
-		$script = $_SERVER['SCRIPT_NAME'];
-		$path = htmlspecialchars( str_replace( '//', '/', pathinfo( $script, PATHINFO_DIRNAME ) ) );
-		$ext = htmlspecialchars( pathinfo( $script, PATHINFO_EXTENSION ) );
-
-		# Check to see if the installer is running
-		if ( !function_exists( 'session_name' ) ) {
-			$installerStarted = false;
-		} else {
-			session_name( 'mw_installer_session' );
-			$oldReporting = error_reporting( E_ALL & ~E_NOTICE );
-			$success = session_start();
-			error_reporting( $oldReporting );
-			$installerStarted = ( $success && isset( $_SESSION['installData'] ) );
+	if ( !is_readable( MW_CONFIG_FILE ) ) {
+		function wfWebStartNoLocalSettings() {
+			# LocalSettings.php is the per-site customization file. If it does not exist
+			# the wiki installer needs to be launched or the generated file uploaded to
+			# the root wiki directory. Give a hint, if it is not readable by the server.
+			global $IP;
+			require_once "$IP/includes/NoLocalSettings.php";
+			die();
 		}
-
-		$please = $installerStarted
-			? "Please <a href=\"$path/mw-config/index.$ext\"> complete the installation</a> and download LocalSettings.php."
-			: "Please <a href=\"$path/mw-config/index.$ext\"> set up the wiki</a> first.";
-
-		wfDie( "<p>LocalSettings.php not found.</p><p>$please</p>" );
+		define( 'MW_CONFIG_CALLBACK', 'wfWebStartNoLocalSettings' );
 	}
-
-	# Include site settings. $IP may be changed (hopefully before the AutoLoader is invoked)
-	require_once( MW_CONFIG_FILE );
 }
 
-if ( $wgEnableSelenium ) {
-	require_once( MWInit::compiledPath( "includes/SeleniumWebSettings.php" ) );
-}
-
-wfProfileOut( 'WebStart.php-conf' );
-
-wfProfileIn( 'WebStart.php-ob_start' );
-# Initialise output buffering
-# Check that there is no previous output or previously set up buffers, because
-# that would cause us to potentially mix gzip and non-gzip output, creating a
-# big mess.
-if ( !defined( 'MW_NO_OUTPUT_BUFFER' ) && ob_get_level() == 0 ) {
-	if ( !defined( 'MW_COMPILED' ) ) {
-		require_once( "$IP/includes/OutputHandler.php" );
+// Custom setup for WebStart entry point
+if ( !defined( 'MW_SETUP_CALLBACK' ) ) {
+	function wfWebStartSetup() {
+		// Initialise output buffering
+		// Check for previously set up buffers, to avoid a mix of gzip and non-gzip output.
+		if ( ob_get_level() == 0 ) {
+			ob_start( 'MediaWiki\\OutputHandler::handle' );
+		}
 	}
-	ob_start( 'wfOutputHandler' );
-}
-wfProfileOut( 'WebStart.php-ob_start' );
-
-if ( !defined( 'MW_NO_SETUP' ) ) {
-	require_once( MWInit::compiledPath( "includes/Setup.php" ) );
+	define( 'MW_SETUP_CALLBACK', 'wfWebStartSetup' );
 }
 
+require_once "$IP/includes/Setup.php";
+
+# Multiple DBs or commits might be used; keep the request as transactional as possible
+if ( isset( $_SERVER['REQUEST_METHOD'] ) && $_SERVER['REQUEST_METHOD'] === 'POST' ) {
+	ignore_user_abort( true );
+}
+
+if ( !defined( 'MW_API' ) &&
+	RequestContext::getMain()->getRequest()->getHeader( 'Promise-Non-Write-API-Action' )
+) {
+	header( 'Cache-Control: no-cache' );
+	header( 'Content-Type: text/html; charset=utf-8' );
+	HttpStatus::header( 400 );
+	$error = wfMessage( 'nonwrite-api-promise-error' )->escaped();
+	$content = <<<EOT
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8" /></head>
+<body>
+$error
+</body>
+</html>
+
+EOT;
+	header( 'Content-Length: ' . strlen( $content ) );
+	echo $content;
+	die();
+}

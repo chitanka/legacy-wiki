@@ -24,66 +24,75 @@
  * @author Ævar Arnfjörð Bjarmason <avarab@gmail.com>
  */
 
+use Wikimedia\Rdbms\IResultWrapper;
+use Wikimedia\Rdbms\IDatabase;
+
 /**
- * A querypage to show categories ordered in descending order by the pages  in them
+ * A querypage to show categories ordered in descending order by the pages in them
  *
  * @ingroup SpecialPage
  */
 class MostlinkedCategoriesPage extends QueryPage {
-
 	function __construct( $name = 'Mostlinkedcategories' ) {
 		parent::__construct( $name );
 	}
 
-	function isExpensive() { return true; }
-	function isSyndicated() { return false; }
-
-	function getQueryInfo() {
-		return array (
-			'tables' => array ( 'categorylinks' ),
-			'fields' => array ( 'cl_to AS title',
-					NS_CATEGORY . ' AS namespace',
-					'COUNT(*) AS value' ),
-			'options' => array ( 'GROUP BY' => 'cl_to' )
-		);
+	function isSyndicated() {
+		return false;
 	}
 
-	function sortDescending() { return true; }
+	public function getQueryInfo() {
+		return [
+			'tables' => [ 'category' ],
+			'fields' => [ 'title' => 'cat_title',
+				'namespace' => NS_CATEGORY,
+				'value' => 'cat_pages' ],
+			'conds' => [ 'cat_pages > 0' ],
+		];
+	}
+
+	function sortDescending() {
+		return true;
+	}
 
 	/**
 	 * Fetch user page links and cache their existence
 	 *
-	 * @param $db DatabaseBase
+	 * @param IDatabase $db
+	 * @param IResultWrapper $res
 	 */
 	function preprocessResults( $db, $res ) {
-		$batch = new LinkBatch;
-		foreach ( $res as $row ) {
-			$batch->add( NS_CATEGORY, $row->title );
-		}
-		$batch->execute();
-
-		// Back to start for display
-		if ( $db->numRows( $res ) > 0 ) {
-			// If there are no rows we get an error seeking.
-			$db->dataSeek( $res, 0 );
-		}
+		$this->executeLBFromResultWrapper( $res );
 	}
 
 	/**
-	 * @param $skin Skin
-	 * @param  $result
+	 * @param Skin $skin
+	 * @param object $result Result row
 	 * @return string
 	 */
 	function formatResult( $skin, $result ) {
-		global $wgLang, $wgContLang;
+		global $wgContLang;
 
-		$nt = Title::makeTitle( NS_CATEGORY, $result->title );
+		$nt = Title::makeTitleSafe( NS_CATEGORY, $result->title );
+		if ( !$nt ) {
+			return Html::element(
+				'span',
+				[ 'class' => 'mw-invalidtitle' ],
+				Linker::getInvalidTitleDescription(
+					$this->getContext(),
+					NS_CATEGORY,
+					$result->title )
+			);
+		}
+
 		$text = $wgContLang->convert( $nt->getText() );
+		$plink = $this->getLinkRenderer()->makeLink( $nt, $text );
+		$nlinks = $this->msg( 'nmembers' )->numParams( $result->value )->escaped();
 
-		$plink = $skin->link( $nt, htmlspecialchars( $text ) );
+		return $this->getLanguage()->specialList( $plink, $nlinks );
+	}
 
-		$nlinks = wfMsgExt( 'nmembers', array( 'parsemag', 'escape' ),
-			$wgLang->formatNum( $result->value ) );
-		return wfSpecialList( $plink, $nlinks );
+	protected function getGroupName() {
+		return 'highuse';
 	}
 }

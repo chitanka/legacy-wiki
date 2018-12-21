@@ -1,4 +1,25 @@
 <?php
+/**
+ * Class for managing forking command line scripts.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * http://www.gnu.org/copyleft/gpl.html
+ *
+ * @file
+ */
+use MediaWiki\MediaWikiServices;
 
 /**
  * Class for managing forking command line scripts.
@@ -10,11 +31,11 @@
  * @ingroup Maintenance
  */
 class ForkController {
-	var $children = array();
-	var $termReceived = false;
-	var $flags = 0, $procsToStart = 0;
+	protected $children = [], $childNumber = 0;
+	protected $termReceived = false;
+	protected $flags = 0, $procsToStart = 0;
 
-	static $restartableSignals = array(
+	protected static $restartableSignals = [
 		SIGFPE,
 		SIGILL,
 		SIGSEGV,
@@ -24,7 +45,7 @@ class ForkController {
 		SIGPIPE,
 		SIGXCPU,
 		SIGXFSZ,
-	);
+	];
 
 	/**
 	 * Pass this flag to __construct() to cause the class to automatically restart
@@ -33,8 +54,8 @@ class ForkController {
 	const RESTART_ON_ERROR = 1;
 
 	public function __construct( $numProcs, $flags = 0 ) {
-		if ( php_sapi_name() != 'cli' ) {
-			throw new MWException( "MultiProcess cannot be used from the web." );
+		if ( !wfIsCLI() ) {
+			throw new MWException( "ForkController cannot be used from the web." );
 		}
 		$this->procsToStart = $numProcs;
 		$this->flags = $flags;
@@ -49,10 +70,11 @@ class ForkController {
 	 * This will return 'child' in the child processes. In the parent process,
 	 * it will run until all the child processes exit or a TERM signal is
 	 * received. It will then return 'done'.
+	 * @return string
 	 */
 	public function start() {
 		// Trap SIGTERM
-		pcntl_signal( SIGTERM, array( $this, 'handleTermSignal' ), false );
+		pcntl_signal( SIGTERM, [ $this, 'handleTermSignal' ], false );
 
 		do {
 			// Start child processes
@@ -100,7 +122,9 @@ class ForkController {
 			if ( function_exists( 'pcntl_signal_dispatch' ) ) {
 				pcntl_signal_dispatch();
 			} else {
-				declare (ticks=1) { $status = $status; }
+				declare( ticks = 1 ) {
+					$status = $status;
+				}
 			}
 			// Respond to TERM signal
 			if ( $this->termReceived ) {
@@ -114,16 +138,33 @@ class ForkController {
 		return 'done';
 	}
 
+	/**
+	 * Get the number of the child currently running. Note, this
+	 * is not the pid, but rather which of the total number of children
+	 * we are
+	 * @return int
+	 */
+	public function getChildNumber() {
+		return $this->childNumber;
+	}
+
 	protected function prepareEnvironment() {
 		global $wgMemc;
-		// Don't share DB or memcached connections
-		wfGetLBFactory()->destroyInstance();
+		// Don't share DB, storage, or memcached connections
+		MediaWikiServices::resetChildProcessServices();
+		FileBackendGroup::destroySingleton();
+		LockManagerGroup::destroySingletons();
+		JobQueueGroup::destroySingletons();
 		ObjectCache::clear();
-		unset( $wgMemc );
+		RedisConnectionPool::destroySingletons();
+		$wgMemc = null;
 	}
 
 	/**
 	 * Fork a number of worker processes.
+	 *
+	 * @param int $numProcs
+	 * @return string
 	 */
 	protected function forkWorkers( $numProcs ) {
 		$this->prepareEnvironment();
@@ -139,6 +180,7 @@ class ForkController {
 
 			if ( !$pid ) {
 				$this->initChild();
+				$this->childNumber = $i;
 				return 'child';
 			} else {
 				// This is the parent process

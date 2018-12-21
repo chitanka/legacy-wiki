@@ -1,10 +1,6 @@
 <?php
 /**
- *
- *
- * Created on Sep 27, 2008
- *
- * Copyright © 2008 Roan Kattouw <Firstname>.<Lastname>@gmail.com
+ * Copyright © 2008 Roan Kattouw "<Firstname>.<Lastname>@gmail.com"
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,11 +20,6 @@
  * @file
  */
 
-if ( !defined( 'MEDIAWIKI' ) ) {
-	// Eclipse helper - will be ignored in production
-	require_once( "ApiQueryBase.php" );
-}
-
 /**
  * A query module to list duplicates of the given file(s)
  *
@@ -36,7 +27,7 @@ if ( !defined( 'MEDIAWIKI' ) ) {
  */
 class ApiQueryDuplicateFiles extends ApiQueryGeneratorBase {
 
-	public function __construct( $query, $moduleName ) {
+	public function __construct( ApiQuery $query, $moduleName ) {
 		parent::__construct( $query, $moduleName, 'df' );
 	}
 
@@ -53,77 +44,107 @@ class ApiQueryDuplicateFiles extends ApiQueryGeneratorBase {
 	}
 
 	/**
-	 * @param $resultPageSet ApiPageSet
-	 * @return
+	 * @param ApiPageSet $resultPageSet
 	 */
 	private function run( $resultPageSet = null ) {
 		$params = $this->extractRequestParams();
-		$namespaces = $this->getPageSet()->getAllTitlesByNamespace();
+		$namespaces = $this->getPageSet()->getGoodAndMissingTitlesByNamespace();
 		if ( empty( $namespaces[NS_FILE] ) ) {
 			return;
 		}
 		$images = $namespaces[NS_FILE];
 
-		$this->addTables( 'image', 'i1' );
-		$this->addTables( 'image', 'i2' );
-		$this->addFields( array(
-			'i1.img_name AS orig_name',
-			'i2.img_name AS dup_name',
-			'i2.img_user_text AS dup_user_text',
-			'i2.img_timestamp AS dup_timestamp'
-		) );
-
-		$this->addWhere( array(
-			'i1.img_name' => array_keys( $images ),
-			'i1.img_sha1 = i2.img_sha1',
-			'i1.img_name != i2.img_name',
-		) );
-
-		if ( isset( $params['continue'] ) ) {
-			$cont = explode( '|', $params['continue'] );
-			if ( count( $cont ) != 2 ) {
-				$this->dieUsage( 'Invalid continue param. You should pass the ' .
-					'original value returned by the previous query', '_badcontinue' );
-			}
-			$orig = $this->getDB()->strencode( $this->titleTokey( $cont[0] ) );
-			$dup = $this->getDB()->strencode( $this->titleToKey( $cont[1] ) );
-			$this->addWhere(
-				"i1.img_name > '$orig' OR " .
-				"(i1.img_name = '$orig' AND " .
-				"i2.img_name >= '$dup')"
-			);
+		if ( $params['dir'] == 'descending' ) {
+			$images = array_reverse( $images );
 		}
 
-		$this->addOption( 'ORDER BY', 'i1.img_name' );
-		$this->addOption( 'LIMIT', $params['limit'] + 1 );
-
-		$res = $this->select( __METHOD__ );
-		$count = 0;
-		$titles = array();
-		foreach ( $res as $row ) {
-			if ( ++$count > $params['limit'] ) {
-				// We've reached the one extra which shows that
-				// there are additional pages to be had. Stop here...
-				$this->setContinueEnumParameter( 'continue',
-					$this->keyToTitle( $row->orig_name ) . '|' .
-					$this->keyToTitle( $row->dup_name ) );
-				break;
-			}
-			if ( !is_null( $resultPageSet ) ) {
-				$titles[] = Title::makeTitle( NS_FILE, $row->dup_name );
-			} else {
-				$r = array(
-					'name' => $row->dup_name,
-					'user' => $row->dup_user_text,
-					'timestamp' => wfTimestamp( TS_ISO_8601, $row->dup_timestamp )
-				);
-				$fit = $this->addPageSubItem( $images[$row->orig_name], $r );
-				if ( !$fit ) {
-					$this->setContinueEnumParameter( 'continue',
-							$this->keyToTitle( $row->orig_name ) . '|' .
-							$this->keyToTitle( $row->dup_name ) );
+		$skipUntilThisDup = false;
+		if ( isset( $params['continue'] ) ) {
+			$cont = explode( '|', $params['continue'] );
+			$this->dieContinueUsageIf( count( $cont ) != 2 );
+			$fromImage = $cont[0];
+			$skipUntilThisDup = $cont[1];
+			// Filter out any images before $fromImage
+			foreach ( $images as $image => $pageId ) {
+				if ( $image < $fromImage ) {
+					unset( $images[$image] );
+				} else {
 					break;
 				}
+			}
+		}
+
+		$filesToFind = array_keys( $images );
+		if ( $params['localonly'] ) {
+			$files = RepoGroup::singleton()->getLocalRepo()->findFiles( $filesToFind );
+		} else {
+			$files = RepoGroup::singleton()->findFiles( $filesToFind );
+		}
+
+		$fit = true;
+		$count = 0;
+		$titles = [];
+
+		$sha1s = [];
+		foreach ( $files as $file ) {
+			/** @var File $file */
+			$sha1s[$file->getName()] = $file->getSha1();
+		}
+
+		// find all files with the hashes, result format is:
+		// [ hash => [ dup1, dup2 ], hash1 => ... ]
+		$filesToFindBySha1s = array_unique( array_values( $sha1s ) );
+		if ( $params['localonly'] ) {
+			$filesBySha1s = RepoGroup::singleton()->getLocalRepo()->findBySha1s( $filesToFindBySha1s );
+		} else {
+			$filesBySha1s = RepoGroup::singleton()->findBySha1s( $filesToFindBySha1s );
+		}
+
+		// iterate over $images to handle continue param correct
+		foreach ( $images as $image => $pageId ) {
+			if ( !isset( $sha1s[$image] ) ) {
+				continue; // file does not exist
+			}
+			$sha1 = $sha1s[$image];
+			$dupFiles = $filesBySha1s[$sha1];
+			if ( $params['dir'] == 'descending' ) {
+				$dupFiles = array_reverse( $dupFiles );
+			}
+			/** @var File $dupFile */
+			foreach ( $dupFiles as $dupFile ) {
+				$dupName = $dupFile->getName();
+				if ( $image == $dupName && $dupFile->isLocal() ) {
+					continue; // ignore the local file itself
+				}
+				if ( $skipUntilThisDup !== false && $dupName < $skipUntilThisDup ) {
+					continue; // skip to pos after the image from continue param
+				}
+				$skipUntilThisDup = false;
+				if ( ++$count > $params['limit'] ) {
+					$fit = false; // break outer loop
+					// We're one over limit which shows that
+					// there are additional images to be had. Stop here...
+					$this->setContinueEnumParameter( 'continue', $image . '|' . $dupName );
+					break;
+				}
+				if ( !is_null( $resultPageSet ) ) {
+					$titles[] = $dupFile->getTitle();
+				} else {
+					$r = [
+						'name' => $dupName,
+						'user' => $dupFile->getUser( 'text' ),
+						'timestamp' => wfTimestamp( TS_ISO_8601, $dupFile->getTimestamp() ),
+						'shared' => !$dupFile->isLocal(),
+					];
+					$fit = $this->addPageSubItem( $pageId, $r );
+					if ( !$fit ) {
+						$this->setContinueEnumParameter( 'continue', $image . '|' . $dupName );
+						break;
+					}
+				}
+			}
+			if ( !$fit ) {
+				break;
 			}
 		}
 		if ( !is_null( $resultPageSet ) ) {
@@ -132,43 +153,38 @@ class ApiQueryDuplicateFiles extends ApiQueryGeneratorBase {
 	}
 
 	public function getAllowedParams() {
-		return array(
-			'limit' => array(
+		return [
+			'limit' => [
 				ApiBase::PARAM_DFLT => 10,
 				ApiBase::PARAM_TYPE => 'limit',
 				ApiBase::PARAM_MIN => 1,
 				ApiBase::PARAM_MAX => ApiBase::LIMIT_BIG1,
 				ApiBase::PARAM_MAX2 => ApiBase::LIMIT_BIG2
-			),
-			'continue' => null,
-		);
+			],
+			'continue' => [
+				ApiBase::PARAM_HELP_MSG => 'api-help-param-continue',
+			],
+			'dir' => [
+				ApiBase::PARAM_DFLT => 'ascending',
+				ApiBase::PARAM_TYPE => [
+					'ascending',
+					'descending'
+				]
+			],
+			'localonly' => false,
+		];
 	}
 
-	public function getParamDescription() {
-		return array(
-			'limit' => 'How many files to return',
-			'continue' => 'When more results are available, use this to continue',
-		);
+	protected function getExamplesMessages() {
+		return [
+			'action=query&titles=File:Albert_Einstein_Head.jpg&prop=duplicatefiles'
+				=> 'apihelp-query+duplicatefiles-example-simple',
+			'action=query&generator=allimages&prop=duplicatefiles'
+				=> 'apihelp-query+duplicatefiles-example-generated',
+		];
 	}
 
-	public function getDescription() {
-		return 'List all files that are duplicates of the given file(s)';
-	}
-
-	public function getPossibleErrors() {
-		return array_merge( parent::getPossibleErrors(), array(
-			array( 'code' => '_badcontinue', 'info' => 'Invalid continue param. You should pass the original value returned by the previous query' ),
-		) );
-	}
-
-	protected function getExamples() {
-		return array(
-			'api.php?action=query&titles=File:Albert_Einstein_Head.jpg&prop=duplicatefiles',
-			'api.php?action=query&generator=allimages&prop=duplicatefiles',
-		);
-	}
-
-	public function getVersion() {
-		return __CLASS__ . ': $Id: ApiQueryDuplicateFiles.php 82429 2011-02-19 00:30:18Z reedy $';
+	public function getHelpUrls() {
+		return 'https://www.mediawiki.org/wiki/Special:MyLanguage/API:Duplicatefiles';
 	}
 }

@@ -21,6 +21,9 @@
  * @ingroup SpecialPage
  */
 
+use Wikimedia\Rdbms\IResultWrapper;
+use Wikimedia\Rdbms\IDatabase;
+
 /**
  * SpecialShortpages extends QueryPage. It is used to return the shortest
  * pages in the database.
@@ -33,74 +36,143 @@ class ShortPagesPage extends QueryPage {
 		parent::__construct( $name );
 	}
 
-	// inexpensive?
-	/**
-	 * This query is indexed as of 1.5
-	 */
-	function isExpensive() {
-		return true;
-	}
-
 	function isSyndicated() {
 		return false;
 	}
 
-	function getQueryInfo() {
-		return array (
-			'tables' => array ( 'page' ),
-			'fields' => array ( 'page_namespace AS namespace',
-					'page_title AS title',
-					'page_len AS value' ),
-			'conds' => array ( 'page_namespace' => MWNamespace::getContentNamespaces(),
-					'page_is_redirect' => 0 ),
-			'options' => array ( 'USE INDEX' => 'page_len' )
-		);
+	public function getQueryInfo() {
+		$config = $this->getConfig();
+		$blacklist = $config->get( 'ShortPagesNamespaceBlacklist' );
+		$tables = [ 'page' ];
+		$conds = [
+			'page_namespace' => array_diff( MWNamespace::getContentNamespaces(), $blacklist ),
+			'page_is_redirect' => 0
+		];
+		$joinConds = [];
+		$options = [ 'USE INDEX' => [ 'page' => 'page_redirect_namespace_len' ] ];
+
+		// Allow extensions to modify the query
+		Hooks::run( 'ShortPagesQuery', [ &$tables, &$conds, &$joinConds, &$options ] );
+
+		return [
+			'tables' => $tables,
+			'fields' => [
+				'namespace' => 'page_namespace',
+				'title' => 'page_title',
+				'value' => 'page_len'
+			],
+			'conds' => $conds,
+			'join_conds' => $joinConds,
+			'options' => $options
+		];
+	}
+
+	public function reallyDoQuery( $limit, $offset = false ) {
+		$fname = static::class . '::reallyDoQuery';
+		$dbr = $this->getRecacheDB();
+		$query = $this->getQueryInfo();
+		$order = $this->getOrderFields();
+
+		if ( $this->sortDescending() ) {
+			foreach ( $order as &$field ) {
+				$field .= ' DESC';
+			}
+		}
+
+		$tables = isset( $query['tables'] ) ? (array)$query['tables'] : [];
+		$fields = isset( $query['fields'] ) ? (array)$query['fields'] : [];
+		$conds = isset( $query['conds'] ) ? (array)$query['conds'] : [];
+		$options = isset( $query['options'] ) ? (array)$query['options'] : [];
+		$join_conds = isset( $query['join_conds'] ) ? (array)$query['join_conds'] : [];
+
+		if ( $limit !== false ) {
+			$options['LIMIT'] = intval( $limit );
+		}
+
+		if ( $offset !== false ) {
+			$options['OFFSET'] = intval( $offset );
+		}
+
+		$namespaces = $conds['page_namespace'];
+		if ( count( $namespaces ) === 1 ) {
+			$options['ORDER BY'] = $order;
+			$res = $dbr->select( $tables, $fields, $conds, $fname,
+				$options, $join_conds
+			);
+		} else {
+			unset( $conds['page_namespace'] );
+			$options['INNER ORDER BY'] = $order;
+			$options['ORDER BY'] = [ 'value' . ( $this->sortDescending() ? ' DESC' : '' ) ];
+			$sql = $dbr->unionConditionPermutations(
+				$tables,
+				$fields,
+				[ 'page_namespace' => $namespaces ],
+				$conds,
+				$fname,
+				$options,
+				$join_conds
+			);
+			$res = $dbr->query( $sql, $fname );
+		}
+
+		return $res;
 	}
 
 	function getOrderFields() {
-		return array( 'page_len' );
+		return [ 'page_len' ];
 	}
 
+	/**
+	 * @param IDatabase $db
+	 * @param IResultWrapper $res
+	 */
 	function preprocessResults( $db, $res ) {
-		# There's no point doing a batch check if we aren't caching results;
-		# the page must exist for it to have been pulled out of the table
-		if( $this->isCached() ) {
-			$batch = new LinkBatch();
-			foreach ( $res as $row ) {
-				$batch->add( $row->namespace, $row->title );
-			}
-			$batch->execute();
-			if ( $db->numRows( $res ) > 0 ) {
-				$db->dataSeek( $res, 0 );
-			}
-		}
+		$this->executeLBFromResultWrapper( $res );
 	}
 
 	function sortDescending() {
 		return false;
 	}
 
+	/**
+	 * @param Skin $skin
+	 * @param object $result Result row
+	 * @return string
+	 */
 	function formatResult( $skin, $result ) {
-		global $wgLang, $wgContLang;
-		$dm = $wgContLang->getDirMark();
+		$dm = $this->getLanguage()->getDirMark();
 
-		$title = Title::makeTitle( $result->namespace, $result->title );
+		$title = Title::makeTitleSafe( $result->namespace, $result->title );
 		if ( !$title ) {
-			return '<!-- Invalid title ' .  htmlspecialchars( "{$result->namespace}:{$result->title}" ). '-->';
+			return Html::element( 'span', [ 'class' => 'mw-invalidtitle' ],
+				Linker::getInvalidTitleDescription( $this->getContext(), $result->namespace, $result->title ) );
 		}
-		$hlink = $skin->linkKnown(
-			$title,
-			wfMsgHtml( 'hist' ),
-			array(),
-			array( 'action' => 'history' )
-		);
-		$plink = $this->isCached()
-					? $skin->link( $title )
-					: $skin->linkKnown( $title );
-		$size = wfMessage( 'nbytes', $wgLang->formatNum( $result->value ) )->escaped();
 
-		return $title->exists()
-				? "({$hlink}) {$dm}{$plink} {$dm}[{$size}]"
-				: "<del>({$hlink}) {$dm}{$plink} {$dm}[{$size}]</del>";
+		$linkRenderer = $this->getLinkRenderer();
+		$hlink = $linkRenderer->makeKnownLink(
+			$title,
+			$this->msg( 'hist' )->text(),
+			[],
+			[ 'action' => 'history' ]
+		);
+		$hlinkInParentheses = $this->msg( 'parentheses' )->rawParams( $hlink )->escaped();
+
+		if ( $this->isCached() ) {
+			$plink = $linkRenderer->makeLink( $title );
+			$exists = $title->exists();
+		} else {
+			$plink = $linkRenderer->makeKnownLink( $title );
+			$exists = true;
+		}
+
+		$size = $this->msg( 'nbytes' )->numParams( $result->value )->escaped();
+
+		return $exists
+			? "${hlinkInParentheses} {$dm}{$plink} {$dm}[{$size}]"
+			: "<del>${hlinkInParentheses} {$dm}{$plink} {$dm}[{$size}]</del>";
+	}
+
+	protected function getGroupName() {
+		return 'maintenance';
 	}
 }

@@ -20,19 +20,32 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * http://www.gnu.org/copyleft/gpl.html
  *
+ * @file
  * @ingroup Maintenance
  * @todo document
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+use Wikimedia\Rdbms\IMaintainableDatabase;
+use Wikimedia\Rdbms\DatabaseSqlite;
+
+/**
+ * Maintenance script that rebuilds search index table from scratch.
+ *
+ * @ingroup Maintenance
+ */
 class RebuildTextIndex extends Maintenance {
 	const RTI_CHUNK_SIZE = 500;
+
+	/**
+	 * @var IMaintainableDatabase
+	 */
 	private $db;
 
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Rebuild search index table from scratch";
+		$this->addDescription( 'Rebuild search index table from scratch' );
 	}
 
 	public function getDbType() {
@@ -40,28 +53,26 @@ class RebuildTextIndex extends Maintenance {
 	}
 
 	public function execute() {
-		global $wgTitle;
-
 		// Shouldn't be needed for Postgres
-		$this->db = wfGetDB( DB_MASTER );
+		$this->db = $this->getDB( DB_MASTER );
 		if ( $this->db->getType() == 'postgres' ) {
-			$this->error( "This script is not needed when using Postgres.\n", true );
+			$this->fatalError( "This script is not needed when using Postgres.\n" );
 		}
 
-		$this->db = wfGetDB( DB_MASTER );
 		if ( $this->db->getType() == 'sqlite' ) {
 			if ( !DatabaseSqlite::getFulltextSearchModule() ) {
-				$this->error( "Your version of SQLite module for PHP doesn't support full-text search (FTS3).\n", true );
+				$this->fatalError( "Your version of SQLite module for PHP doesn't "
+					. "support full-text search (FTS3).\n" );
 			}
 			if ( !$this->db->checkForEnabledSearch() ) {
-				$this->error( "Your database schema is not configured for full-text search support. Run update.php.\n", true );
+				$this->fatalError( "Your database schema is not configured for "
+					. "full-text search support. Run update.php.\n" );
 			}
 		}
-
-		$wgTitle = Title::newFromText( "Rebuild text index script" );
 
 		if ( $this->db->getType() == 'mysql' ) {
 			$this->dropMysqlTextIndex();
+			$this->clearSearchIndex();
 			$this->populateSearchIndex();
 			$this->createMysqlTextIndex();
 		} else {
@@ -82,22 +93,31 @@ class RebuildTextIndex extends Maintenance {
 		$this->output( "Rebuilding index fields for {$count} pages...\n" );
 		$n = 0;
 
+		$revQuery = Revision::getQueryInfo( [ 'page', 'text' ] );
+
 		while ( $n < $count ) {
 			if ( $n ) {
 				$this->output( $n . "\n" );
 			}
 			$end = $n + self::RTI_CHUNK_SIZE - 1;
 
-			$res = $this->db->select( array( 'page', 'revision', 'text' ),
-				array( 'page_id', 'page_namespace', 'page_title', 'old_flags', 'old_text' ),
-				array( "page_id BETWEEN $n AND $end", 'page_latest = rev_id', 'rev_text_id = old_id' ),
+			$res = $this->db->select( $revQuery['tables'], $revQuery['fields'],
+				[ "page_id BETWEEN $n AND $end", 'page_latest = rev_id', 'rev_text_id = old_id' ],
 				__METHOD__
-				);
+			);
 
 			foreach ( $res as $s ) {
-				$revtext = Revision::getRevisionText( $s );
-				$u = new SearchUpdate( $s->page_id, $s->page_title, $revtext );
-				$u->doUpdate();
+				$title = Title::makeTitle( $s->page_namespace, $s->page_title );
+				try {
+					$rev = new Revision( $s );
+					$content = $rev->getContent();
+
+					$u = new SearchUpdate( $s->page_id, $title, $content );
+					$u->doUpdate();
+				} catch ( MWContentSerializationException $ex ) {
+					$this->output( "Failed to deserialize content of revision {$s->rev_id} of page "
+						. "`" . $title->getPrefixedDBkey() . "`!\n" );
+				}
 			}
 			$n += self::RTI_CHUNK_SIZE;
 		}
@@ -108,7 +128,7 @@ class RebuildTextIndex extends Maintenance {
 	 */
 	private function dropMysqlTextIndex() {
 		$searchindex = $this->db->tableName( 'searchindex' );
-		if ( $this->db->indexExists( 'searchindex', 'si_title' ) ) {
+		if ( $this->db->indexExists( 'searchindex', 'si_title', __METHOD__ ) ) {
 			$this->output( "Dropping index...\n" );
 			$sql = "ALTER TABLE $searchindex DROP INDEX si_title, DROP INDEX si_text";
 			$this->db->query( $sql, __METHOD__ );
@@ -121,9 +141,10 @@ class RebuildTextIndex extends Maintenance {
 	private function createMysqlTextIndex() {
 		$searchindex = $this->db->tableName( 'searchindex' );
 		$this->output( "\nRebuild the index...\n" );
-		$sql = "ALTER TABLE $searchindex ADD FULLTEXT si_title (si_title), " .
-		  "ADD FULLTEXT si_text (si_text)";
-		$this->db->query( $sql, __METHOD__ );
+		foreach ( [ 'si_title', 'si_text' ] as $field ) {
+			$sql = "ALTER TABLE $searchindex ADD FULLTEXT $field ($field)";
+			$this->db->query( $sql, __METHOD__ );
+		}
 	}
 
 	/**
@@ -136,5 +157,5 @@ class RebuildTextIndex extends Maintenance {
 	}
 }
 
-$maintClass = "RebuildTextIndex";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = RebuildTextIndex::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

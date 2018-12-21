@@ -22,12 +22,17 @@
  * @author Brion Vibber
  */
 
+use Wikimedia\Rdbms\IResultWrapper;
+use Wikimedia\Rdbms\IDatabase;
 
 /**
  * Special:LinkSearch to search the external-links table.
  * @ingroup SpecialPage
  */
 class LinkSearchPage extends QueryPage {
+	/** @var array|bool */
+	private $mungedQuery = false;
+
 	function setParams( $params ) {
 		$this->mQuery = $params['query'];
 		$this->mNs = $params['namespace'];
@@ -36,77 +41,106 @@ class LinkSearchPage extends QueryPage {
 
 	function __construct( $name = 'LinkSearch' ) {
 		parent::__construct( $name );
+
+		// Since we don't control the constructor parameters, we can't inject services that way.
+		// Instead, we initialize services in the execute() method, and allow them to be overridden
+		// using the setServices() method.
 	}
 
 	function isCacheable() {
 		return false;
 	}
 
-	function execute( $par ) {
-		global $wgOut, $wgRequest, $wgUrlProtocols, $wgMiserMode, $wgLang;
+	public function execute( $par ) {
 		$this->setHeaders();
-		$wgOut->allowClickjacking();
+		$this->outputHeader();
 
-		$target = $wgRequest->getVal( 'target', $par );
-		$namespace = $wgRequest->getIntorNull( 'namespace', null );
+		$out = $this->getOutput();
+		$out->allowClickjacking();
 
-		$protocols_list[] = '';
-		foreach( $wgUrlProtocols as $prot ) {
-			$protocols_list[] = $prot;
+		$request = $this->getRequest();
+		$target = $request->getVal( 'target', $par );
+		$namespace = $request->getIntOrNull( 'namespace' );
+
+		$protocols_list = [];
+		foreach ( $this->getConfig()->get( 'UrlProtocols' ) as $prot ) {
+			if ( $prot !== '//' ) {
+				$protocols_list[] = $prot;
+			}
 		}
 
 		$target2 = $target;
-		$protocol = '';
-		$pr_sl = strpos($target2, '//' );
-		$pr_cl = strpos($target2, ':' );
-		if ( $pr_sl ) {
-			// For protocols with '//'
-			$protocol = substr( $target2, 0 , $pr_sl+2 );
-			$target2 = substr( $target2, $pr_sl+2 );
-		} elseif ( !$pr_sl && $pr_cl ) {
-			// For protocols without '//' like 'mailto:'
-			$protocol = substr( $target2, 0 , $pr_cl+1 );
-			$target2 = substr( $target2, $pr_cl+1 );
-		} elseif ( $protocol == '' && $target2 != '' ) {
-			// default
-			$protocol = 'http://';
-		}
-		if ( !in_array( $protocol, $protocols_list ) ) {
-			// unsupported protocol, show original search request
-			$target2 = $target;
-			$protocol = '';
+		// Get protocol, default is http://
+		$protocol = 'http://';
+		$bits = wfParseUrl( $target );
+		if ( isset( $bits['scheme'] ) && isset( $bits['delimiter'] ) ) {
+			$protocol = $bits['scheme'] . $bits['delimiter'];
+			// Make sure wfParseUrl() didn't make some well-intended correction in the
+			// protocol
+			if ( strcasecmp( $protocol, substr( $target, 0, strlen( $protocol ) ) ) === 0 ) {
+				$target2 = substr( $target, strlen( $protocol ) );
+			} else {
+				// If it did, let LinkFilter::makeLikeArray() handle this
+				$protocol = '';
+			}
 		}
 
-		$self = $this->getTitle();
-
-		$wgOut->addWikiMsg( 'linksearch-text', '<nowiki>' . $wgLang->commaList( $wgUrlProtocols ) . '</nowiki>' );
-		$s = Xml::openElement( 'form', array( 'id' => 'mw-linksearch-form', 'method' => 'get', 'action' => $GLOBALS['wgScript'] ) ) .
-			Html::hidden( 'title', $self->getPrefixedDbKey() ) .
-			'<fieldset>' .
-			Xml::element( 'legend', array(), wfMsg( 'linksearch' ) ) .
-			Xml::inputLabel( wfMsg( 'linksearch-pat' ), 'target', 'target', 50, $target ) . ' ';
-		if ( !$wgMiserMode ) {
-			$s .= Xml::label( wfMsg( 'linksearch-ns' ), 'namespace' ) . ' ' .
-				Xml::namespaceSelector( $namespace, '' );
+		$out->addWikiMsg(
+			'linksearch-text',
+			'<nowiki>' . $this->getLanguage()->commaList( $protocols_list ) . '</nowiki>',
+			count( $protocols_list )
+		);
+		$fields = [
+			'target' => [
+				'type' => 'text',
+				'name' => 'target',
+				'id' => 'target',
+				'size' => 50,
+				'label-message' => 'linksearch-pat',
+				'default' => $target,
+				'dir' => 'ltr',
+			]
+		];
+		if ( !$this->getConfig()->get( 'MiserMode' ) ) {
+			$fields += [
+				'namespace' => [
+					'type' => 'namespaceselect',
+					'name' => 'namespace',
+					'label-message' => 'linksearch-ns',
+					'default' => $namespace,
+					'id' => 'namespace',
+					'all' => '',
+					'cssclass' => 'namespaceselector',
+				],
+			];
 		}
-		$s .=	Xml::submitButton( wfMsg( 'linksearch-ok' ) ) .
-			'</fieldset>' .
-			Xml::closeElement( 'form' );
-		$wgOut->addHTML( $s );
+		$hiddenFields = [
+			'title' => $this->getPageTitle()->getPrefixedDBkey(),
+		];
+		$htmlForm = HTMLForm::factory( 'ooui', $fields, $this->getContext() );
+		$htmlForm->addHiddenFields( $hiddenFields );
+		$htmlForm->setSubmitTextMsg( 'linksearch-ok' );
+		$htmlForm->setWrapperLegendMsg( 'linksearch' );
+		$htmlForm->setAction( wfScript() );
+		$htmlForm->setMethod( 'get' );
+		$htmlForm->prepareForm()->displayForm( false );
+		$this->addHelpLink( 'Help:Linksearch' );
 
-		if( $target != '' ) {
-			$this->setParams( array(
-				'query' => $target2,
+		if ( $target != '' ) {
+			$this->setParams( [
+				'query' => Parser::normalizeLinkUrl( $target2 ),
 				'namespace' => $namespace,
-				'protocol' => $protocol ) );
+				'protocol' => $protocol ] );
 			parent::execute( $par );
-			if( $this->mMungedQuery === false )
-				$wgOut->addWikiMsg( 'linksearch-error' );
+			if ( $this->mungedQuery === false ) {
+				$out->addWikiMsg( 'linksearch-error' );
+			}
 		}
 	}
 
 	/**
 	 * Disable RSS/Atom feeds
+	 * @return bool
 	 */
 	function isSyndicated() {
 		return false;
@@ -114,82 +148,102 @@ class LinkSearchPage extends QueryPage {
 
 	/**
 	 * Return an appropriately formatted LIKE query and the clause
+	 *
+	 * @param string $query Search pattern to search for
+	 * @param string $prot Protocol, e.g. 'http://'
+	 *
+	 * @return array
 	 */
 	static function mungeQuery( $query, $prot ) {
 		$field = 'el_index';
-		$rv = LinkFilter::makeLikeArray( $query , $prot );
+		$dbr = wfGetDB( DB_REPLICA );
+
+		if ( $query === '*' && $prot !== '' ) {
+			// Allow queries like 'ftp://*' to find all ftp links
+			$rv = [ $prot, $dbr->anyString() ];
+		} else {
+			$rv = LinkFilter::makeLikeArray( $query, $prot );
+		}
+
 		if ( $rv === false ) {
 			// LinkFilter doesn't handle wildcard in IP, so we'll have to munge here.
-			if (preg_match('/^(:?[0-9]{1,3}\.)+\*\s*$|^(:?[0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]*\*\s*$/', $query)) {
-				$dbr = wfGetDB( DB_SLAVE );
-				$rv = array( $prot . rtrim( $query, " \t*" ), $dbr->anyString() );
+			$pattern = '/^(:?[0-9]{1,3}\.)+\*\s*$|^(:?[0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]*\*\s*$/';
+			if ( preg_match( $pattern, $query ) ) {
+				$rv = [ $prot . rtrim( $query, " \t*" ), $dbr->anyString() ];
 				$field = 'el_to';
 			}
 		}
-		return array( $rv, $field );
+
+		return [ $rv, $field ];
 	}
 
 	function linkParameters() {
-		global $wgMiserMode;
-		$params = array();
+		$params = [];
 		$params['target'] = $this->mProt . $this->mQuery;
-		if( isset( $this->mNs ) && !$wgMiserMode ) {
+		if ( $this->mNs !== null && !$this->getConfig()->get( 'MiserMode' ) ) {
 			$params['namespace'] = $this->mNs;
 		}
+
 		return $params;
 	}
 
-	function getQueryInfo() {
-		global $wgMiserMode;
-		$dbr = wfGetDB( DB_SLAVE );
+	public function getQueryInfo() {
+		$dbr = wfGetDB( DB_REPLICA );
 		// strip everything past first wildcard, so that
 		// index-based-only lookup would be done
-		list( $this->mMungedQuery, $clause ) = self::mungeQuery(
-				$this->mQuery, $this->mProt );
-		if( $this->mMungedQuery === false )
+		list( $this->mungedQuery, $clause ) = self::mungeQuery( $this->mQuery, $this->mProt );
+		if ( $this->mungedQuery === false ) {
 			// Invalid query; return no results
-			return array( 'tables' => 'page', 'fields' => 'page_id', 'conds' => '0=1' );
+			return [ 'tables' => 'page', 'fields' => 'page_id', 'conds' => '0=1' ];
+		}
 
-		$stripped = LinkFilter::keepOneWildcard( $this->mMungedQuery );
+		$stripped = LinkFilter::keepOneWildcard( $this->mungedQuery );
 		$like = $dbr->buildLike( $stripped );
-		$retval = array (
-			'tables' => array ( 'page', 'externallinks' ),
-			'fields' => array ( 'page_namespace AS namespace',
-					'page_title AS title',
-					'el_index AS value', 'el_to AS url' ),
-			'conds' => array ( 'page_id = el_from',
-					"$clause $like" ),
-			'options' => array( 'USE INDEX' => $clause )
-		);
-		if ( isset( $this->mNs ) && !$wgMiserMode ) {
+		$retval = [
+			'tables' => [ 'page', 'externallinks' ],
+			'fields' => [
+				'namespace' => 'page_namespace',
+				'title' => 'page_title',
+				'value' => 'el_index',
+				'url' => 'el_to'
+			],
+			'conds' => [
+				'page_id = el_from',
+				"$clause $like"
+			],
+			'options' => [ 'USE INDEX' => $clause ]
+		];
+
+		if ( $this->mNs !== null && !$this->getConfig()->get( 'MiserMode' ) ) {
 			$retval['conds']['page_namespace'] = $this->mNs;
 		}
+
 		return $retval;
 	}
 
-	function formatResult( $skin, $result ) {
-		$title = Title::makeTitle( $result->namespace, $result->title );
-		$url = $result->url;
-		$pageLink = $skin->linkKnown( $title );
-		$urlLink = $skin->makeExternalLink( $url, $url );
-
-		return wfMsgHtml( 'linksearch-line', $urlLink, $pageLink );
+	/**
+	 * Pre-fill the link cache
+	 *
+	 * @param IDatabase $db
+	 * @param IResultWrapper $res
+	 */
+	function preprocessResults( $db, $res ) {
+		$this->executeLBFromResultWrapper( $res );
 	}
 
 	/**
-	 * Override to check query validity.
+	 * @param Skin $skin
+	 * @param object $result Result row
+	 * @return string
 	 */
-	function doQuery( $offset = false, $limit = false ) {
-		global $wgOut;
-		list( $this->mMungedQuery,  ) = LinkSearchPage::mungeQuery( $this->mQuery, $this->mProt );
-		if( $this->mMungedQuery === false ) {
-			$wgOut->addWikiMsg( 'linksearch-error' );
-		} else {
-			// For debugging
-			// Generates invalid xhtml with patterns that contain --
-			//$wgOut->addHTML( "\n<!-- " . htmlspecialchars( $this->mMungedQuery ) . " -->\n" );
-			parent::doQuery( $offset, $limit );
-		}
+	function formatResult( $skin, $result ) {
+		$title = new TitleValue( (int)$result->namespace, $result->title );
+		$pageLink = $this->getLinkRenderer()->makeLink( $title );
+
+		$url = $result->url;
+		$urlLink = Linker::makeExternalLink( $url, $url );
+
+		return $this->msg( 'linksearch-line' )->rawParams( $urlLink, $pageLink )->escaped();
 	}
 
 	/**
@@ -197,8 +251,24 @@ class LinkSearchPage extends QueryPage {
 	 * We do a truncated index search, so the optimizer won't trust
 	 * it as good enough for optimizing sort. The implicit ordering
 	 * from the scan will usually do well enough for our needs.
+	 * @return array
 	 */
 	function getOrderFields() {
-		return array();
+		return [];
+	}
+
+	protected function getGroupName() {
+		return 'redirects';
+	}
+
+	/**
+	 * enwiki complained about low limits on this special page
+	 *
+	 * @see T130058
+	 * @todo FIXME This special page should not use LIMIT for paging
+	 * @return int
+	 */
+	protected function getMaxResults() {
+		return max( parent::getMaxResults(), 60000 );
 	}
 }

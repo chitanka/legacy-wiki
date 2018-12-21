@@ -28,13 +28,12 @@
  * @ingroup SpecialPage
  */
 class RandomPage extends SpecialPage {
-	private $namespaces;  // namespaces to select pages from
+	private $namespaces; // namespaces to select pages from
 	protected $isRedir = false; // should the result be a redirect?
-	protected $extra = array(); // Extra SQL statements
+	protected $extra = []; // Extra SQL statements
 
-	public function __construct( $name = 'Randompage' ){
-		global $wgContentNamespaces;
-		$this->namespaces = $wgContentNamespaces;
+	public function __construct( $name = 'Randompage' ) {
+		$this->namespaces = MWNamespace::getContentNamespaces();
 		parent::__construct( $name );
 	}
 
@@ -42,69 +41,78 @@ class RandomPage extends SpecialPage {
 		return $this->namespaces;
 	}
 
-	public function setNamespace ( $ns ) {
-		if( !$ns || $ns < NS_MAIN ) {
+	public function setNamespace( $ns ) {
+		if ( !$ns || $ns < NS_MAIN ) {
 			$ns = NS_MAIN;
 		}
-		$this->namespaces = array( $ns );
+		$this->namespaces = [ $ns ];
 	}
 
 	// select redirects instead of normal pages?
-	public function isRedirect(){
+	public function isRedirect() {
 		return $this->isRedir;
 	}
 
 	public function execute( $par ) {
-		global $wgOut, $wgContLang, $wgRequest;
+		global $wgContLang;
 
-		if ($par) {
+		if ( is_string( $par ) ) {
+			// Testing for stringiness since we want to catch
+			// the empty string to mean main namespace only.
 			$this->setNamespace( $wgContLang->getNsIndex( $par ) );
 		}
 
 		$title = $this->getRandomTitle();
 
-		if( is_null( $title ) ) {
+		if ( is_null( $title ) ) {
 			$this->setHeaders();
-			$wgOut->addWikiMsg( strtolower( $this->mName ) . '-nopages',
+			// Message: randompage-nopages, randomredirect-nopages
+			$this->getOutput()->addWikiMsg( strtolower( $this->getName() ) . '-nopages',
 				$this->getNsList(), count( $this->namespaces ) );
+
 			return;
 		}
 
-		$redirectParam = $this->isRedirect() ? array( 'redirect' => 'no' ) : array();
-		$query = array_merge( $wgRequest->getValues(), $redirectParam );
+		$redirectParam = $this->isRedirect() ? [ 'redirect' => 'no' ] : [];
+		$query = array_merge( $this->getRequest()->getValues(), $redirectParam );
 		unset( $query['title'] );
-		$wgOut->redirect( $title->getFullUrl( $query ) );
+		$this->getOutput()->redirect( $title->getFullURL( $query ) );
 	}
 
 	/**
 	 * Get a comma-delimited list of namespaces we don't have
 	 * any pages in
-	 * @return String
+	 * @return string
 	 */
 	private function getNsList() {
 		global $wgContLang;
-		$nsNames = array();
-		foreach( $this->namespaces as $n ) {
-			if( $n === NS_MAIN ) {
-				$nsNames[] = wfMsgNoTrans( 'blanknamespace' );
+		$nsNames = [];
+		foreach ( $this->namespaces as $n ) {
+			if ( $n === NS_MAIN ) {
+				$nsNames[] = $this->msg( 'blanknamespace' )->plain();
 			} else {
 				$nsNames[] = $wgContLang->getNsText( $n );
 			}
 		}
+
 		return $wgContLang->commaList( $nsNames );
 	}
 
 	/**
 	 * Choose a random title.
-	 * @return Title object (or null if nothing to choose from)
+	 * @return Title|null Title object (or null if nothing to choose from)
 	 */
 	public function getRandomTitle() {
 		$randstr = wfRandom();
 		$title = null;
-		if ( !wfRunHooks( 'SpecialRandomGetRandomTitle', array( &$randstr, &$this->isRedir, &$this->namespaces,
-			&$this->extra, &$title ) ) ) {
+
+		if ( !Hooks::run(
+			'SpecialRandomGetRandomTitle',
+			[ &$randstr, &$this->isRedir, &$this->namespaces, &$this->extra, &$title ]
+		) ) {
 			return $title;
 		}
+
 		$row = $this->selectRandomPageFromDB( $randstr );
 
 		/* If we picked a value that was higher than any in
@@ -114,39 +122,44 @@ class RandomPage extends SpecialPage {
 		 * any more bias than what the page_random scheme
 		 * causes anyway.  Trust me, I'm a mathematician. :)
 		 */
-		if( !$row ) {
+		if ( !$row ) {
 			$row = $this->selectRandomPageFromDB( "0" );
 		}
 
-		if( $row ) {
+		if ( $row ) {
 			return Title::makeTitleSafe( $row->page_namespace, $row->page_title );
-		} else {
-			return null;
 		}
+
+		return null;
 	}
 
 	protected function getQueryInfo( $randstr ) {
 		$redirect = $this->isRedirect() ? 1 : 0;
+		$tables = [ 'page' ];
+		$conds = array_merge( [
+			'page_namespace' => $this->namespaces,
+			'page_is_redirect' => $redirect,
+			'page_random >= ' . $randstr
+		], $this->extra );
+		$joinConds = [];
 
-		return array(
-			'tables' => array( 'page' ),
-			'fields' => array( 'page_title', 'page_namespace' ),
-			'conds' => array_merge( array(
-				'page_namespace' => $this->namespaces,
-				'page_is_redirect' => $redirect,
-				'page_random >= ' . $randstr
-			), $this->extra ),
-			'options' => array(
+		// Allow extensions to modify the query
+		Hooks::run( 'RandomPageQuery', [ &$tables, &$conds, &$joinConds ] );
+
+		return [
+			'tables' => $tables,
+			'fields' => [ 'page_title', 'page_namespace' ],
+			'conds' => $conds,
+			'options' => [
 				'ORDER BY' => 'page_random',
-				'USE INDEX' => 'page_random',
 				'LIMIT' => 1,
-			),
-			'join_conds' => array()
-		);
+			],
+			'join_conds' => $joinConds
+		];
 	}
 
 	private function selectRandomPageFromDB( $randstr, $fname = __METHOD__ ) {
-		$dbr = wfGetDB( DB_SLAVE );
+		$dbr = wfGetDB( DB_REPLICA );
 
 		$query = $this->getQueryInfo( $randstr );
 		$res = $dbr->select(
@@ -159,5 +172,9 @@ class RandomPage extends SpecialPage {
 		);
 
 		return $dbr->fetchObject( $res );
+	}
+
+	protected function getGroupName() {
+		return 'redirects';
 	}
 }

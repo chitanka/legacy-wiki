@@ -1,10 +1,6 @@
 <?php
 /**
- *
- *
- * Created on Sep 19, 2006
- *
- * Copyright © 2006-2007 Yuri Astrakhan <Firstname><Lastname>@gmail.com,
+ * Copyright © 2006-2007 Yuri Astrakhan "<Firstname><Lastname>@gmail.com",
  * Daniel Cannon (cannon dot danielc at gmail dot com)
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,10 +21,10 @@
  * @file
  */
 
-if ( !defined( 'MEDIAWIKI' ) ) {
-	// Eclipse helper - will be ignored in production
-	require_once( 'ApiBase.php' );
-}
+use MediaWiki\Auth\AuthManager;
+use MediaWiki\Auth\AuthenticationRequest;
+use MediaWiki\Auth\AuthenticationResponse;
+use MediaWiki\Logger\LoggerFactory;
 
 /**
  * Unit to authenticate log-in attempts to the current wiki.
@@ -37,13 +33,38 @@ if ( !defined( 'MEDIAWIKI' ) ) {
  */
 class ApiLogin extends ApiBase {
 
-	public function __construct( $main, $action ) {
+	public function __construct( ApiMain $main, $action ) {
 		parent::__construct( $main, $action, 'lg' );
+	}
+
+	protected function getExtendedDescription() {
+		if ( $this->getConfig()->get( 'EnableBotPasswords' ) ) {
+			return 'apihelp-login-extended-description';
+		} else {
+			return 'apihelp-login-extended-description-nobotpasswords';
+		}
+	}
+
+	/**
+	 * Format a message for the response
+	 * @param Message|string|array $message
+	 * @return string|array
+	 */
+	private function formatMessage( $message ) {
+		$message = Message::newFromSpecifier( $message );
+		$errorFormatter = $this->getErrorFormatter();
+		if ( $errorFormatter instanceof ApiErrorFormatter_BackCompat ) {
+			return ApiErrorFormatter::stripMarkup(
+				$message->useDatabase( false )->inLanguage( 'en' )->text()
+			);
+		} else {
+			return $errorFormatter->formatMessage( $message );
+		}
 	}
 
 	/**
 	 * Executes the log-in attempt using the parameters passed. If
-	 * the log-in succeeeds, it attaches a cookie to the session
+	 * the log-in succeeds, it attaches a cookie to the session
 	 * and outputs the user id, username, and session token. If a
 	 * log-in fails, as the result of a bad password, a nonexistent
 	 * user, or any other reason, the host is cached with an expiry
@@ -51,99 +72,152 @@ class ApiLogin extends ApiBase {
 	 * is reached. The expiry is $this->mLoginThrottle.
 	 */
 	public function execute() {
-		$params = $this->extractRequestParams();
+		// If we're in a mode that breaks the same-origin policy, no tokens can
+		// be obtained
+		if ( $this->lacksSameOriginSecurity() ) {
+			$this->getResult()->addValue( null, 'login', [
+				'result' => 'Aborted',
+				'reason' => $this->formatMessage( 'api-login-fail-sameorigin' ),
+			] );
 
-		$result = array();
-
-		$req = new FauxRequest( array(
-			'wpName' => $params['name'],
-			'wpPassword' => $params['password'],
-			'wpDomain' => $params['domain'],
-			'wpLoginToken' => $params['token'],
-			'wpRemember' => ''
-		) );
-
-		// Init session if necessary
-		if ( session_id() == '' ) {
-			wfSetupSession();
+			return;
 		}
 
-		$loginForm = new LoginForm( $req );
+		$this->requirePostedParameters( [ 'password', 'token' ] );
 
-		global $wgCookiePrefix, $wgUser, $wgPasswordAttemptThrottle;
+		$params = $this->extractRequestParams();
 
-		$authRes = $loginForm->authenticateUserData();
+		$result = [];
+
+		// Make sure session is persisted
+		$session = MediaWiki\Session\SessionManager::getGlobalSession();
+		$session->persist();
+
+		// Make sure it's possible to log in
+		if ( !$session->canSetUser() ) {
+			$this->getResult()->addValue( null, 'login', [
+				'result' => 'Aborted',
+				'reason' => $this->formatMessage( [
+					'api-login-fail-badsessionprovider',
+					$session->getProvider()->describe( $this->getErrorFormatter()->getLanguage() ),
+				] )
+			] );
+
+			return;
+		}
+
+		$authRes = false;
+		$context = new DerivativeContext( $this->getContext() );
+		$loginType = 'N/A';
+
+		// Check login token
+		$token = $session->getToken( '', 'login' );
+		if ( $token->wasNew() || !$params['token'] ) {
+			$authRes = 'NeedToken';
+		} elseif ( !$token->match( $params['token'] ) ) {
+			$authRes = 'WrongToken';
+		}
+
+		// Try bot passwords
+		if (
+			$authRes === false && $this->getConfig()->get( 'EnableBotPasswords' ) &&
+			( $botLoginData = BotPassword::canonicalizeLoginData( $params['name'], $params['password'] ) )
+		) {
+			$status = BotPassword::login(
+				$botLoginData[0], $botLoginData[1], $this->getRequest()
+			);
+			if ( $status->isOK() ) {
+				$session = $status->getValue();
+				$authRes = 'Success';
+				$loginType = 'BotPassword';
+			} elseif ( !$botLoginData[2] ||
+				$status->hasMessage( 'login-throttled' ) ||
+				$status->hasMessage( 'botpasswords-needs-reset' ) ||
+				$status->hasMessage( 'botpasswords-locked' )
+			) {
+				$authRes = 'Failed';
+				$message = $status->getMessage();
+				LoggerFactory::getInstance( 'authentication' )->info(
+					'BotPassword login failed: ' . $status->getWikiText( false, false, 'en' )
+				);
+			}
+		}
+
+		if ( $authRes === false ) {
+			// Simplified AuthManager login, for backwards compatibility
+			$manager = AuthManager::singleton();
+			$reqs = AuthenticationRequest::loadRequestsFromSubmission(
+				$manager->getAuthenticationRequests( AuthManager::ACTION_LOGIN, $this->getUser() ),
+				[
+					'username' => $params['name'],
+					'password' => $params['password'],
+					'domain' => $params['domain'],
+					'rememberMe' => true,
+				]
+			);
+			$res = AuthManager::singleton()->beginAuthentication( $reqs, 'null:' );
+			switch ( $res->status ) {
+				case AuthenticationResponse::PASS:
+					if ( $this->getConfig()->get( 'EnableBotPasswords' ) ) {
+						$this->addDeprecation( 'apiwarn-deprecation-login-botpw', 'main-account-login' );
+					} else {
+						$this->addDeprecation( 'apiwarn-deprecation-login-nobotpw', 'main-account-login' );
+					}
+					$authRes = 'Success';
+					$loginType = 'AuthManager';
+					break;
+
+				case AuthenticationResponse::FAIL:
+					// Hope it's not a PreAuthenticationProvider that failed...
+					$authRes = 'Failed';
+					$message = $res->message;
+					\MediaWiki\Logger\LoggerFactory::getInstance( 'authentication' )
+						->info( __METHOD__ . ': Authentication failed: '
+						. $message->inLanguage( 'en' )->plain() );
+					break;
+
+				default:
+					\MediaWiki\Logger\LoggerFactory::getInstance( 'authentication' )
+						->info( __METHOD__ . ': Authentication failed due to unsupported response type: '
+						. $res->status, $this->getAuthenticationResponseLogData( $res ) );
+					$authRes = 'Aborted';
+					break;
+			}
+		}
+
+		$result['result'] = $authRes;
 		switch ( $authRes ) {
-			case LoginForm::SUCCESS:
-				$wgUser->setOption( 'rememberpassword', 1 );
-				$wgUser->setCookies( $this->getMain()->getRequest() );
+			case 'Success':
+				$user = $session->getUser();
 
-				// Run hooks. FIXME: split back and frontend from this hook.
-				// FIXME: This hook should be placed in the backend
+				ApiQueryInfo::resetTokenCache();
+
+				// Deprecated hook
 				$injected_html = '';
-				wfRunHooks( 'UserLoginComplete', array( &$wgUser, &$injected_html ) );
+				Hooks::run( 'UserLoginComplete', [ &$user, &$injected_html, true ] );
 
-				$result['result'] = 'Success';
-				$result['lguserid'] = intval( $wgUser->getId() );
-				$result['lgusername'] = $wgUser->getName();
-				$result['lgtoken'] = $wgUser->getToken();
-				$result['cookieprefix'] = $wgCookiePrefix;
-				$result['sessionid'] = session_id();
+				$result['lguserid'] = intval( $user->getId() );
+				$result['lgusername'] = $user->getName();
 				break;
 
-			case LoginForm::NEED_TOKEN:
-				$result['result'] = 'NeedToken';
-				$result['token'] = $loginForm->getLoginToken();
-				$result['cookieprefix'] = $wgCookiePrefix;
-				$result['sessionid'] = session_id();
+			case 'NeedToken':
+				$result['token'] = $token->toString();
+				$this->addDeprecation( 'apiwarn-deprecation-login-token', 'action=login&!lgtoken' );
 				break;
 
-			case LoginForm::WRONG_TOKEN:
-				$result['result'] = 'WrongToken';
+			case 'WrongToken':
 				break;
 
-			case LoginForm::NO_NAME:
-				$result['result'] = 'NoName';
+			case 'Failed':
+				$result['reason'] = $this->formatMessage( $message );
 				break;
 
-			case LoginForm::ILLEGAL:
-				$result['result'] = 'Illegal';
-				break;
-
-			case LoginForm::WRONG_PLUGIN_PASS:
-				$result['result'] = 'WrongPluginPass';
-				break;
-
-			case LoginForm::NOT_EXISTS:
-				$result['result'] = 'NotExists';
-				break;
-
-			case LoginForm::RESET_PASS: // bug 20223 - Treat a temporary password as wrong. Per SpecialUserLogin - "The e-mailed temporary password should not be used for actual logins;"
-			case LoginForm::WRONG_PASS:
-				$result['result'] = 'WrongPass';
-				break;
-
-			case LoginForm::EMPTY_PASS:
-				$result['result'] = 'EmptyPass';
-				break;
-
-			case LoginForm::CREATE_BLOCKED:
-				$result['result'] = 'CreateBlocked';
-				$result['details'] = 'Your IP address is blocked from account creation';
-				break;
-
-			case LoginForm::THROTTLED:
-				$result['result'] = 'Throttled';
-				$result['wait'] = intval( $wgPasswordAttemptThrottle['seconds'] );
-				break;
-
-			case LoginForm::USER_BLOCKED:
-				$result['result'] = 'Blocked';
-				break;
-
-			case LoginForm::ABORTED:
-				$result['result'] = 'Aborted';
-				$result['reason'] =  $loginForm->mAbortLoginErrorMsg;
+			case 'Aborted':
+				$result['reason'] = $this->formatMessage(
+					$this->getConfig()->get( 'EnableBotPasswords' )
+						? 'api-login-fail-aborted'
+						: 'api-login-fail-aborted-nobotpw'
+				);
 				break;
 
 			default:
@@ -151,6 +225,20 @@ class ApiLogin extends ApiBase {
 		}
 
 		$this->getResult()->addValue( null, 'login', $result );
+
+		if ( $loginType === 'LoginForm' && isset( LoginForm::$statusCodes[$authRes] ) ) {
+			$authRes = LoginForm::$statusCodes[$authRes];
+		}
+		LoggerFactory::getInstance( 'authevents' )->info( 'Login attempt', [
+			'event' => 'login',
+			'successful' => $authRes === 'Success',
+			'loginType' => $loginType,
+			'status' => $authRes,
+		] );
+	}
+
+	public function isDeprecated() {
+		return !$this->getConfig()->get( 'EnableBotPasswords' );
 	}
 
 	public function mustBePosted() {
@@ -162,56 +250,59 @@ class ApiLogin extends ApiBase {
 	}
 
 	public function getAllowedParams() {
-		return array(
+		return [
 			'name' => null,
-			'password' => null,
+			'password' => [
+				ApiBase::PARAM_TYPE => 'password',
+			],
 			'domain' => null,
-			'token' => null,
-		);
+			'token' => [
+				ApiBase::PARAM_TYPE => 'string',
+				ApiBase::PARAM_REQUIRED => false, // for BC
+				ApiBase::PARAM_SENSITIVE => true,
+				ApiBase::PARAM_HELP_MSG => [ 'api-help-param-token', 'login' ],
+			],
+		];
 	}
 
-	public function getParamDescription() {
-		return array(
-			'name' => 'User Name',
-			'password' => 'Password',
-			'domain' => 'Domain (optional)',
-			'token' => 'Login token obtained in first request',
-		);
+	protected function getExamplesMessages() {
+		return [
+			'action=login&lgname=user&lgpassword=password'
+				=> 'apihelp-login-example-gettoken',
+			'action=login&lgname=user&lgpassword=password&lgtoken=123ABC'
+				=> 'apihelp-login-example-login',
+		];
 	}
 
-	public function getDescription() {
-		return array(
-			'Log in and get the authentication tokens. ',
-			'In the event of a successful log-in, a cookie will be attached',
-			'to your session. In the event of a failed log-in, you will not ',
-			'be able to attempt another log-in through this method for 5 seconds.',
-			'This is to prevent password guessing by automated password crackers'
-		);
+	public function getHelpUrls() {
+		return 'https://www.mediawiki.org/wiki/Special:MyLanguage/API:Login';
 	}
 
-	public function getPossibleErrors() {
-		return array_merge( parent::getPossibleErrors(), array(
-			array( 'code' => 'NeedToken', 'info' => 'You need to resubmit your login with the specified token. See https://bugzilla.wikimedia.org/show_bug.cgi?id=23076' ),
-			array( 'code' => 'WrongToken', 'info' => 'You specified an invalid token' ),
-			array( 'code' => 'NoName', 'info' => 'You didn\'t set the lgname parameter' ),
-			array( 'code' => 'Illegal', 'info' => ' You provided an illegal username' ),
-			array( 'code' => 'NotExists', 'info' => ' The username you provided doesn\'t exist' ),
-			array( 'code' => 'EmptyPass', 'info' => ' You didn\'t set the lgpassword parameter or you left it empty' ),
-			array( 'code' => 'WrongPass', 'info' => ' The password you provided is incorrect' ),
-			array( 'code' => 'WrongPluginPass', 'info' => 'Same as `WrongPass", returned when an authentication plugin rather than MediaWiki itself rejected the password' ),
-			array( 'code' => 'CreateBlocked', 'info' => 'The wiki tried to automatically create a new account for you, but your IP address has been blocked from account creation' ),
-			array( 'code' => 'Throttled', 'info' => 'You\'ve logged in too many times in a short time' ),
-			array( 'code' => 'Blocked', 'info' => 'User is blocked' ),
-		) );
-	}
-
-	protected function getExamples() {
-		return array(
-			'api.php?action=login&lgname=user&lgpassword=password'
-		);
-	}
-
-	public function getVersion() {
-		return __CLASS__ . ': $Id: ApiLogin.php 86860 2011-04-25 14:05:57Z maxsem $';
+	/**
+	 * Turns an AuthenticationResponse into a hash suitable for passing to Logger
+	 * @param AuthenticationResponse $response
+	 * @return array
+	 */
+	protected function getAuthenticationResponseLogData( AuthenticationResponse $response ) {
+		$ret = [
+			'status' => $response->status,
+		];
+		if ( $response->message ) {
+			$ret['message'] = $response->message->inLanguage( 'en' )->plain();
+		};
+		$reqs = [
+			'neededRequests' => $response->neededRequests,
+			'createRequest' => $response->createRequest,
+			'linkRequest' => $response->linkRequest,
+		];
+		foreach ( $reqs as $k => $v ) {
+			if ( $v ) {
+				$v = is_array( $v ) ? $v : [ $v ];
+				$reqClasses = array_unique( array_map( 'get_class', $v ) );
+				sort( $reqClasses );
+				$ret[$k] = implode( ', ', $reqClasses );
+			}
+		}
+		return $ret;
 	}
 }

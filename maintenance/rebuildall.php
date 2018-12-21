@@ -18,38 +18,50 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * http://www.gnu.org/copyleft/gpl.html
  *
+ * @file
  * @ingroup Maintenance
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+/**
+ * Maintenance script that rebuilds link tracking tables from scratch.
+ *
+ * @ingroup Maintenance
+ */
 class RebuildAll extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Rebuild links, text index and recent changes";
+		$this->addDescription( 'Rebuild links, text index and recent changes' );
+	}
+
+	public function getDbType() {
+		return Maintenance::DB_ADMIN;
 	}
 
 	public function execute() {
 		// Rebuild the text index
-		if ( wfGetDB( DB_SLAVE )->getType() != 'postgres' ) {
-			$this->output( "** Rebuilding fulltext search index (if you abort this will break searching; run this script again to fix):\n" );
-			$rebuildText = $this->runChild( 'RebuildTextIndex', 'rebuildtextindex.php' );
+		if ( $this->getDB( DB_REPLICA )->getType() != 'postgres' ) {
+			$this->output( "** Rebuilding fulltext search index (if you abort "
+				. "this will break searching; run this script again to fix):\n" );
+			$rebuildText = $this->runChild( RebuildTextIndex::class, 'rebuildtextindex.php' );
 			$rebuildText->execute();
 		}
 
 		// Rebuild RC
 		$this->output( "\n\n** Rebuilding recentchanges table:\n" );
-		$rebuildRC = $this->runChild( 'RebuildRecentchanges', 'rebuildrecentchanges.php' );
+		$rebuildRC = $this->runChild( RebuildRecentchanges::class, 'rebuildrecentchanges.php' );
 		$rebuildRC->execute();
 
 		// Rebuild link tables
-		$this->output( "\n\n** Rebuilding links tables -- this can take a long time. It should be safe to abort via ctrl+C if you get bored.\n" );
-		$rebuildLinks = $this->runChild( 'RefreshLinks', 'refreshLinks.php' );
+		$this->output( "\n\n** Rebuilding links tables -- this can take a long time. "
+			. "It should be safe to abort via ctrl+C if you get bored.\n" );
+		$rebuildLinks = $this->runChild( RefreshLinks::class, 'refreshLinks.php' );
 		$rebuildLinks->execute();
 
 		$this->output( "Done.\n" );
 	}
 }
 
-$maintClass = "RebuildAll";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = RebuildAll::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

@@ -2,46 +2,131 @@
 /**
  * Revision/log/file deletion backend
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * http://www.gnu.org/copyleft/gpl.html
+ *
  * @file
+ * @ingroup RevisionDelete
  */
 
 /**
- * Temporary b/c interface, collection of static functions.
- * @ingroup SpecialPage
+ * General controller for RevDel, used by both SpecialRevisiondelete and
+ * ApiRevisionDelete.
+ * @ingroup RevisionDelete
  */
 class RevisionDeleter {
+	/** List of known revdel types, with their corresponding list classes */
+	private static $allowedTypes = [
+		'revision' => RevDelRevisionList::class,
+		'archive' => RevDelArchiveList::class,
+		'oldimage' => RevDelFileList::class,
+		'filearchive' => RevDelArchivedFileList::class,
+		'logging' => RevDelLogList::class,
+	];
+
+	/** Type map to support old log entries */
+	private static $deprecatedTypeMap = [
+		'oldid' => 'revision',
+		'artimestamp' => 'archive',
+		'oldimage' => 'oldimage',
+		'fileid' => 'filearchive',
+		'logid' => 'logging',
+	];
+
+	/**
+	 * Lists the valid possible types for revision deletion.
+	 *
+	 * @since 1.22
+	 * @return array
+	 */
+	public static function getTypes() {
+		return array_keys( self::$allowedTypes );
+	}
+
+	/**
+	 * Gets the canonical type name, if any.
+	 *
+	 * @since 1.22
+	 * @param string $typeName
+	 * @return string|null
+	 */
+	public static function getCanonicalTypeName( $typeName ) {
+		if ( isset( self::$deprecatedTypeMap[$typeName] ) ) {
+			$typeName = self::$deprecatedTypeMap[$typeName];
+		}
+		return isset( self::$allowedTypes[$typeName] ) ? $typeName : null;
+	}
+
+	/**
+	 * Instantiate the appropriate list class for a given list of IDs.
+	 *
+	 * @since 1.22
+	 * @param string $typeName RevDel type, see RevisionDeleter::getTypes()
+	 * @param IContextSource $context
+	 * @param Title $title
+	 * @param array $ids
+	 * @return RevDelList
+	 * @throws MWException
+	 */
+	public static function createList( $typeName, IContextSource $context, Title $title, array $ids ) {
+		$typeName = self::getCanonicalTypeName( $typeName );
+		if ( !$typeName ) {
+			throw new MWException( __METHOD__ . ": Unknown RevDel type '$typeName'" );
+		}
+		$class = self::$allowedTypes[$typeName];
+		return new $class( $context, $title, $ids );
+	}
+
 	/**
 	 * Checks for a change in the bitfield for a certain option and updates the
 	 * provided array accordingly.
 	 *
-	 * @param $desc String: description to add to the array if the option was
+	 * @param string $desc Description to add to the array if the option was
 	 * enabled / disabled.
-	 * @param $field Integer: the bitmask describing the single option.
-	 * @param $diff Integer: the xor of the old and new bitfields.
-	 * @param $new Integer: the new bitfield 
-	 * @param $arr Array: the array to update.
+	 * @param int $field The bitmask describing the single option.
+	 * @param int $diff The xor of the old and new bitfields.
+	 * @param int $new The new bitfield
+	 * @param array &$arr The array to update.
 	 */
 	protected static function checkItem( $desc, $field, $diff, $new, &$arr ) {
-		if( $diff & $field ) {
-			$arr[ ( $new & $field ) ? 0 : 1 ][] = $desc;
+		if ( $diff & $field ) {
+			$arr[( $new & $field ) ? 0 : 1][] = $desc;
 		}
 	}
 
 	/**
-	 * Gets an array of message keys describing the changes made to the visibility
-	 * of the revision. If the resulting array is $arr, then $arr[0] will contain an 
-	 * array of strings describing the items that were hidden, $arr[2] will contain 
-	 * an array of strings describing the items that were unhidden, and $arr[3] will 
-	 * contain an array with a single string, which can be one of "applied 
-	 * restrictions to sysops", "removed restrictions from sysops", or null.
+	 * Gets an array of message keys describing the changes made to the
+	 * visibility of the revision.
 	 *
-	 * @param $n Integer: the new bitfield.
-	 * @param $o Integer: the old bitfield.
-	 * @return An array as described above.
+	 * If the resulting array is $arr, then $arr[0] will contain an array of
+	 * keys describing the items that were hidden, $arr[1] will contain
+	 * an array of keys describing the items that were unhidden, and $arr[2]
+	 * will contain an array with a single message key, which can be one of
+	 * "revdelete-restricted", "revdelete-unrestricted" indicating (un)suppression
+	 * or null to indicate nothing in particular.
+	 * You can turn the keys in $arr[0] and $arr[1] into message keys by
+	 * appending -hid and -unhid to the keys respectively.
+	 *
+	 * @param int $n The new bitfield.
+	 * @param int $o The old bitfield.
+	 * @return array An array as described above.
+	 * @since 1.19 public
 	 */
-	protected static function getChanges( $n, $o ) {
+	public static function getChanges( $n, $o ) {
 		$diff = $n ^ $o;
-		$ret = array( 0 => array(), 1 => array(), 2 => array() );
+		$ret = [ 0 => [], 1 => [], 2 => [] ];
 		// Build bitfield changes in language
 		self::checkItem( 'revdelete-content',
 			Revision::DELETED_TEXT, $diff, $n, $ret );
@@ -50,80 +135,72 @@ class RevisionDeleter {
 		self::checkItem( 'revdelete-uname',
 			Revision::DELETED_USER, $diff, $n, $ret );
 		// Restriction application to sysops
-		if( $diff & Revision::DELETED_RESTRICTED ) {
-			if( $n & Revision::DELETED_RESTRICTED )
+		if ( $diff & Revision::DELETED_RESTRICTED ) {
+			if ( $n & Revision::DELETED_RESTRICTED ) {
 				$ret[2][] = 'revdelete-restricted';
-			else
+			} else {
 				$ret[2][] = 'revdelete-unrestricted';
+			}
 		}
 		return $ret;
 	}
 
-	/**
-	 * Gets a log message to describe the given revision visibility change. This
-	 * message will be of the form "[hid {content, edit summary, username}];
-	 * [unhid {...}][applied restrictions to sysops] for $count revisions: $comment".
-	 *
-	 * @param $count Integer: The number of effected revisions.
-	 * @param $nbitfield Integer: The new bitfield for the revision.
-	 * @param $obitfield Integer: The old bitfield for the revision.
-	 * @param $isForLog Boolean
-	 * @param $forContent Boolean
+	/** Get DB field name for URL param...
+	 * Future code for other things may also track
+	 * other types of revision-specific changes.
+	 * @param string $typeName
+	 * @return string One of log_id/rev_id/fa_id/ar_timestamp/oi_archive_name
 	 */
-	public static function getLogMessage( $count, $nbitfield, $obitfield, $isForLog = false, $forContent = false ) {
-		global $wgLang, $wgContLang;
-		
-		$lang = $forContent ? $wgContLang : $wgLang;
-		$msgFunc = $forContent ? "wfMsgForContent" : "wfMsg";
-		
-		$changes = self::getChanges( $nbitfield, $obitfield );
-		array_walk( $changes, array( __CLASS__, 'expandMessageArray' ), $forContent );
-		
-		$changesText = array();
-		
-		if( count( $changes[0] ) ) {
-			$changesText[] = $msgFunc( 'revdelete-hid', $lang->commaList( $changes[0] ) );
-		}
-		if( count( $changes[1] ) ) {
-			$changesText[] = $msgFunc( 'revdelete-unhid', $lang->commaList( $changes[1] ) );
-		}
-		
-		$s = $lang->semicolonList( $changesText );
-		if( count( $changes[2] ) ) {
-			$s .= $s ? ' (' . $changes[2][0] . ')' : ' ' . $changes[2][0];
-		}
-		
-		$msg = $isForLog ? 'logdelete-log-message' : 'revdelete-log-message';
-		return wfMsgExt( $msg, $forContent ? array( 'parsemag', 'content' ) : array( 'parsemag' ), $s, $lang->formatNum($count) );
-	}
-	
-	private static function expandMessageArray(& $msg, $key, $forContent) {
-		if ( is_array ( $msg ) ) {
-			array_walk( $msg, array( __CLASS__, 'expandMessageArray' ), $forContent );
-		} else {
-			if ( $forContent ) {
-				$msg = wfMsgForContent($msg);
-			} else {
-				$msg = wfMsg($msg);
-			}
-		}
-	}
-	
-	// Get DB field name for URL param...
-	// Future code for other things may also track
-	// other types of revision-specific changes.
-	// @returns string One of log_id/rev_id/fa_id/ar_timestamp/oi_archive_name
 	public static function getRelationType( $typeName ) {
-		if ( isset( SpecialRevisionDelete::$deprecatedTypeMap[$typeName] ) ) {
-			$typeName = SpecialRevisionDelete::$deprecatedTypeMap[$typeName];
-		}
-		if ( isset( SpecialRevisionDelete::$allowedTypes[$typeName] ) ) {
-			$class = SpecialRevisionDelete::$allowedTypes[$typeName]['list-class'];
-			$list = new $class( null, null, null );
-			return $list->getIdField();
-		} else {
+		$typeName = self::getCanonicalTypeName( $typeName );
+		if ( !$typeName ) {
 			return null;
 		}
+		return call_user_func( [ self::$allowedTypes[$typeName], 'getRelationType' ] );
+	}
+
+	/**
+	 * Get the user right required for the RevDel type
+	 * @since 1.22
+	 * @param string $typeName
+	 * @return string User right
+	 */
+	public static function getRestriction( $typeName ) {
+		$typeName = self::getCanonicalTypeName( $typeName );
+		if ( !$typeName ) {
+			return null;
+		}
+		return call_user_func( [ self::$allowedTypes[$typeName], 'getRestriction' ] );
+	}
+
+	/**
+	 * Get the revision deletion constant for the RevDel type
+	 * @since 1.22
+	 * @param string $typeName
+	 * @return int RevDel constant
+	 */
+	public static function getRevdelConstant( $typeName ) {
+		$typeName = self::getCanonicalTypeName( $typeName );
+		if ( !$typeName ) {
+			return null;
+		}
+		return call_user_func( [ self::$allowedTypes[$typeName], 'getRevdelConstant' ] );
+	}
+
+	/**
+	 * Suggest a target for the revision deletion
+	 * @since 1.22
+	 * @param string $typeName
+	 * @param Title|null $target User-supplied target
+	 * @param array $ids
+	 * @return Title|null
+	 */
+	public static function suggestTarget( $typeName, $target, array $ids ) {
+		$typeName = self::getCanonicalTypeName( $typeName );
+		if ( !$typeName ) {
+			return $target;
+		}
+		return call_user_func( [ self::$allowedTypes[$typeName], 'suggestTarget' ], $target, $ids );
 	}
 
 	/**
@@ -131,137 +208,44 @@ class RevisionDeleter {
 	 * If it doesn't, returns the corresponding ar_timestamp field
 	 * so that this key can be used instead.
 	 *
-	 * @param $title Title
-	 * @param  $revid
+	 * @param Title $title
+	 * @param int $revid
 	 * @return bool|mixed
 	 */
 	public static function checkRevisionExistence( $title, $revid ) {
-		$dbr = wfGetDB( DB_SLAVE );
+		$dbr = wfGetDB( DB_REPLICA );
 		$exists = $dbr->selectField( 'revision', '1',
-				array( 'rev_id' => $revid ), __METHOD__ );
-				
+				[ 'rev_id' => $revid ], __METHOD__ );
+
 		if ( $exists ) {
 			return true;
 		}
-		
+
 		$timestamp = $dbr->selectField( 'archive', 'ar_timestamp',
-				array( 'ar_namespace' => $title->getNamespace(),
+				[ 'ar_namespace' => $title->getNamespace(),
 					'ar_title' => $title->getDBkey(),
-					'ar_rev_id' => $revid ), __METHOD__ );
-		
+					'ar_rev_id' => $revid ], __METHOD__ );
+
 		return $timestamp;
 	}
 
 	/**
-	 * Creates utility links for log entries.
-	 *
-	 * @param $title Title
-	 * @param $paramArray Array
-	 * @param $skin Skin
-	 * @param $messages
-	 * @return String
+	 * Put together a rev_deleted bitfield
+	 * @since 1.22
+	 * @param array $bitPars ExtractBitParams() params
+	 * @param int $oldfield Current bitfield
+	 * @return int
 	 */
-	public static function getLogLinks( $title, $paramArray, $skin, $messages ) {
-		global $wgLang;
-		
-		if( count($paramArray) >= 2 ) {
-			// Different revision types use different URL params...
-			$originalKey = $key = $paramArray[0];
-			// $paramArray[1] is a CSV of the IDs
-			$Ids = explode( ',', $paramArray[1] );
-
-			$revert = array();
-			
-			// For if undeleted revisions are found amidst deleted ones.
-			$undeletedRevisions = array();
-			
-			// This is not going to work if some revs are deleted and some
-			//  aren't.
-			if ($key == 'revision') {
-				// Nothing to do; deleted revisions can still be looked up by ID.
+	public static function extractBitfield( array $bitPars, $oldfield ) {
+		// Build the actual new rev_deleted bitfield
+		$newBits = 0;
+		foreach ( $bitPars as $const => $val ) {
+			if ( $val == 1 ) {
+				$newBits |= $const; // $const is the *_deleted const
+			} elseif ( $val == -1 ) {
+				$newBits |= ( $oldfield & $const ); // use existing
 			}
-			
-			// Diff link for single rev deletions
-			if( count($Ids) == 1 && !count($undeletedRevisions) ) {
-				// Live revision diffs...
-				if( in_array( $key, array( 'oldid', 'revision' ) ) ) {
-					$revert[] = $skin->link(
-						$title,
-						$messages['diff'],
-						array(),
-						array(
-							'diff' => intval( $Ids[0] ),
-							'unhide' => 1
-						),
-						array( 'known', 'noclasses' )
-					);
-				// Deleted revision diffs...
-				} else if( in_array( $key, array( 'artimestamp','archive' ) ) ) {
-					$revert[] = $skin->link(
-						SpecialPage::getTitleFor( 'Undelete' ),
-						$messages['diff'], 
-						array(),
-						array(
-							'target'    => $title->getPrefixedDBKey(),
-							'diff'      => 'prev',
-							'timestamp' => $Ids[0]
-						),
-						array( 'known', 'noclasses' )
-					);
-				}
-			}
-			
-			// View/modify link...
-			if ( count( $undeletedRevisions ) ) {
-				// FIXME THIS IS A HORRIBLE HORRIBLE HACK AND SHOULD DIE
-				// It's not possible to pass a list of both deleted and
-				// undeleted revisions to SpecialRevisionDelete, so we're
-				// stuck with two links. See bug 23363.
-				$restoreLinks = array();
-				
-				$restoreLinks[] = $skin->link(
-					SpecialPage::getTitleFor( 'Revisiondelete' ),
-					$messages['revdel-restore-visible'],
-					array(),
-					array(
-						'target' => $title->getPrefixedText(),
-						'type' => $originalKey,
-						'ids' => implode( ',', $undeletedRevisions ),
-					),
-					array( 'known', 'noclasses' )
-				);
-				
-				$restoreLinks[] = $skin->link(
-					SpecialPage::getTitleFor( 'Revisiondelete' ),
-					$messages['revdel-restore-deleted'],
-					array(),
-					array(
-						'target' => $title->getPrefixedText(),
-						'type' => $key,
-						'ids' => implode(',', $Ids),
-					),
-					array( 'known', 'noclasses' )
-				);
-				
-				$revert[] = $messages['revdel-restore'] . ' [' .
-						$wgLang->pipeList( $restoreLinks ) . ']';
-			} else {
-				$revert[] = $skin->link(
-					SpecialPage::getTitleFor( 'Revisiondelete' ),
-					$messages['revdel-restore'],
-					array(),
-					array(
-						'target' => $title->getPrefixedText(),
-						'type' => $key,
-						'ids' => implode(',', $Ids),
-					),
-					array( 'known', 'noclasses' )
-				);
-			}
-			
-			// Pipe links
-			return wfMsg( 'parentheses', $wgLang->pipeList( $revert ) );
 		}
-		return '';
+		return $newBits;
 	}
 }

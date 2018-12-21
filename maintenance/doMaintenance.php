@@ -21,10 +21,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * http://www.gnu.org/copyleft/gpl.html
  *
- * @author Chad Horohoe <chad@anyonecanedit.org>
  * @file
  * @ingroup Maintenance
  */
+use MediaWiki\MediaWikiServices;
 
 if ( !defined( 'RUN_MAINTENANCE_IF_MAIN' ) ) {
 	echo "This file must be included after Maintenance.php\n";
@@ -34,7 +34,7 @@ if ( !defined( 'RUN_MAINTENANCE_IF_MAIN' ) ) {
 // Wasn't included from the file scope, halt execution (probably wanted the class)
 // If a class is using commandLine.inc (old school maintenance), they definitely
 // cannot be included and will proceed with execution
-if( !Maintenance::shouldExecute() && $maintClass != 'CommandLineInc' ) {
+if ( !Maintenance::shouldExecute() && $maintClass != CommandLineInc::class ) {
 	return;
 }
 
@@ -44,6 +44,7 @@ if ( !$maintClass || !class_exists( $maintClass ) ) {
 }
 
 // Get an object to start us off
+/** @var Maintenance $maintenance */
 $maintenance = new $maintClass();
 
 // Basic sanity checks and such
@@ -53,71 +54,60 @@ $maintenance->setup();
 // to $maintenance->mSelf. Keep that here for b/c
 $self = $maintenance->getName();
 
-// Detect compiled mode
-try {
-	$r = new ReflectionFunction( 'wfHipHopCompilerVersion' );
-} catch ( ReflectionException $e ) {
-	$r = false;
+// Define how settings are loaded (e.g. LocalSettings.php)
+if ( !defined( 'MW_CONFIG_CALLBACK' ) && !defined( 'MW_CONFIG_FILE' ) ) {
+	define( 'MW_CONFIG_FILE', $maintenance->loadSettings() );
 }
 
-if ( $r ) {
-	define( 'MW_COMPILED', 1 );
+// Custom setup for Maintenance entry point
+if ( !defined( 'MW_SETUP_CALLBACK' ) ) {
+	function wfMaintenanceSetup() {
+		// phpcs:ignore MediaWiki.NamingConventions.ValidGlobalName.wgPrefix
+		global $maintenance, $wgLocalisationCacheConf, $wgCacheDirectory;
+		if ( $maintenance->getDbType() === Maintenance::DB_NONE ) {
+			if ( $wgLocalisationCacheConf['storeClass'] === false
+				&& ( $wgLocalisationCacheConf['store'] == 'db'
+					|| ( $wgLocalisationCacheConf['store'] == 'detect' && !$wgCacheDirectory ) )
+			) {
+				$wgLocalisationCacheConf['storeClass'] = LCStoreNull::class;
+			}
+		}
+
+		$maintenance->finalSetup();
+	}
+	define( 'MW_SETUP_CALLBACK', 'wfMaintenanceSetup' );
 }
 
-# Get the MWInit class
-if ( !defined( 'MW_COMPILED' ) ) {
-	require_once( "$IP/includes/Init.php" );
-	require_once( "$IP/includes/AutoLoader.php" );
-}
+require_once "$IP/includes/Setup.php";
 
-# Stub the profiler
-require_once( MWInit::compiledPath( 'includes/profiler/Profiler.php' ) );
+// Initialize main config instance
+$maintenance->setConfig( MediaWikiServices::getInstance()->getMainConfig() );
 
-// Some other requires
-if ( !defined( 'MW_COMPILED' ) ) {
-	require_once( "$IP/includes/Defines.php" );
-}
-require_once( "$IP/includes/DefaultSettings.php" );
+// Sanity-check required extensions are installed
+$maintenance->checkRequiredExtensions();
 
-if ( defined( 'MW_CONFIG_CALLBACK' ) ) {
-	# Use a callback function to configure MediaWiki
-	MWFunction::call( MW_CONFIG_CALLBACK );
-} elseif ( file_exists( "$IP/wmf-config/wikimedia-mode" ) ) {
-	// Load settings, using wikimedia-mode if needed
-	// Fixme: replace this hack with general farm-friendly code
-	# TODO FIXME! Wikimedia-specific stuff needs to go away to an ext
-	# Maybe a hook?
-	global $cluster;
-	$wgWikiFarm = true;
-	$cluster = 'pmtpa';
-	require_once( MWInit::compiledPath( 'includes/SiteConfiguration.php' ) );
-	require( MWInit::interpretedPath( 'wmf-config/wgConf.php' ) );
-	$maintenance->loadWikimediaSettings();
-	require( MWInit::interpretedPath( '/wmf-config/CommonSettings.php' ) );
-} else {
-	require_once( $maintenance->loadSettings() );
-}
-
-if ( $maintenance->getDbType() === Maintenance::DB_ADMIN &&
-		is_readable( "$IP/AdminSettings.php" ) )
-{
-	require( MWInit::interpretedPath( 'AdminSettings.php' ) );
-}
-$maintenance->finalSetup();
-// Some last includes
-require_once( MWInit::compiledPath( 'includes/Setup.php' ) );
-
-// Much much faster startup than creating a title object
-$wgTitle = null;
+// A good time when no DBs have writes pending is around lag checks.
+// This avoids having long running scripts just OOM and lose all the updates.
+$maintenance->setAgentAndTriggers();
 
 // Do the work
-try {
-	$maintenance->execute();
+$maintenance->execute();
 
-	// Potentially debug globals
-	$maintenance->globals();
-} catch ( MWException $mwe ) {
-	echo( $mwe->getText() );
-	exit( 1 );
+// Potentially debug globals
+$maintenance->globals();
+
+if ( $maintenance->getDbType() !== Maintenance::DB_NONE ) {
+	// Perform deferred updates.
+	$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
+	$lbFactory->commitMasterChanges( $maintClass );
+	DeferredUpdates::doUpdates();
 }
 
+// log profiling info
+wfLogProfilingData();
+
+if ( isset( $lbFactory ) ) {
+	// Commit and close up!
+	$lbFactory->commitMasterChanges( 'doMaintenance' );
+	$lbFactory->shutdown( $lbFactory::SHUTDOWN_NO_CHRONPROT );
+}

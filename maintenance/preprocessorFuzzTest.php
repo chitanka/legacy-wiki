@@ -21,15 +21,16 @@
  * @ingroup Maintenance
  */
 
-require_once( dirname( __FILE__ ) . '/commandLine.inc' );
+$optionsWithoutArgs = [ 'verbose' ];
+require_once __DIR__ . '/commandLine.inc';
 
 $wgHooks['BeforeParserFetchTemplateAndtitle'][] = 'PPFuzzTester::templateHook';
 
 class PPFuzzTester {
-	var $hairs = array(
+	public $hairs = [
 		'[[', ']]', '{{', '{{', '}}', '}}', '{{{', '}}}',
 		'<', '>', '<nowiki', '<gallery', '</nowiki>', '</gallery>', '<nOwIkI>', '</NoWiKi>',
-		'<!--' , '-->',
+		'<!--', '-->',
 		"\n==", "==\n",
 		'|', '=', "\n", ' ', "\t", "\x7f",
 		'~~', '~~~', '~~~~', 'subst:',
@@ -38,14 +39,18 @@ class PPFuzzTester {
 
 		// extensions
 		// '<ref>', '</ref>', '<references/>',
-	);
-	var $minLength = 0;
-	var $maxLength = 20;
-	var $maxTemplates = 5;
-	// var $outputTypes = array( 'OT_HTML', 'OT_WIKI', 'OT_PREPROCESS' );
-	var $entryPoints = array( 'testSrvus', 'testPst', 'testPreprocess' );
-	var $verbose = false;
-	static $currentTest = false;
+	];
+	public $minLength = 0;
+	public $maxLength = 20;
+	public $maxTemplates = 5;
+	// public $outputTypes = [ 'OT_HTML', 'OT_WIKI', 'OT_PREPROCESS' ];
+	public $entryPoints = [ 'testSrvus', 'testPst', 'testPreprocess' ];
+	public $verbose = false;
+
+	/**
+	 * @var bool|PPFuzzTest
+	 */
+	private static $currentTest = false;
 
 	function execute() {
 		if ( !file_exists( 'results' ) ) {
@@ -63,7 +68,7 @@ class PPFuzzTester {
 				self::$currentTest = new PPFuzzTest( $this );
 				self::$currentTest->execute();
 				$passed = 'passed';
-			} catch ( MWException $e ) {
+			} catch ( Exception $e ) {
 				$testReport = self::$currentTest->getReport();
 				$exceptionReport = $e->getText();
 				$hash = md5( $testReport );
@@ -102,7 +107,6 @@ class PPFuzzTester {
 				file_put_contents( $filename, "Input:\n$testReport\n" );*/
 			}
 		}
-		wfLogProfilingData();
 	}
 
 	function makeInputText( $max = false ) {
@@ -121,6 +125,7 @@ class PPFuzzTester {
 		// It's done by the MW UI, so it's a reasonably legitimate thing to do.
 		global $wgContLang;
 		$s = $wgContLang->normalize( $s );
+
 		return $s;
 	}
 
@@ -136,12 +141,13 @@ class PPFuzzTester {
 
 	function pickEntryPoint() {
 		$count = count( $this->entryPoints );
-		return $this->entryPoints[ mt_rand( 0, $count - 1 ) ];
+
+		return $this->entryPoints[mt_rand( 0, $count - 1 )];
 	}
 }
 
 class PPFuzzTest {
-	var $templates, $mainText, $title, $entryPoint, $output;
+	public $templates, $mainText, $title, $entryPoint, $output;
 
 	function __construct( $tester ) {
 		global $wgMaxSigChars;
@@ -152,9 +158,13 @@ class PPFuzzTest {
 		$this->entryPoint = $tester->pickEntryPoint();
 		$this->nickname = $tester->makeInputText( $wgMaxSigChars + 10 );
 		$this->fancySig = (bool)mt_rand( 0, 1 );
-		$this->templates = array();
+		$this->templates = [];
 	}
 
+	/**
+	 * @param Title $title
+	 * @return array
+	 */
 	function templateHook( $title ) {
 		$titleText = $title->getPrefixedDBkey();
 
@@ -175,10 +185,11 @@ class PPFuzzTest {
 					$text = $this->parent->makeInputText();
 				}
 			}
-			$this->templates[$titleText] = array(
+			$this->templates[$titleText] = [
 				'text' => $text,
-				'finalTitle' => $finalTitle );
+				'finalTitle' => $finalTitle ];
 		}
+
 		return $this->templates[$titleText];
 	}
 
@@ -190,18 +201,25 @@ class PPFuzzTest {
 		$wgUser->mFrom = 'name';
 		$wgUser->ppfz_test = $this;
 
-		$options = new ParserOptions;
-		$options->setTemplateCallback( array( $this, 'templateHook' ) );
+		$options = ParserOptions::newFromUser( $wgUser );
+		$options->setTemplateCallback( [ $this, 'templateHook' ] );
 		$options->setTimestamp( wfTimestampNow() );
-		$this->output = call_user_func( array( $wgParser, $this->entryPoint ), $this->mainText, $this->title->getPrefixedText(), $options );
+		$this->output = call_user_func(
+			[ $wgParser, $this->entryPoint ],
+			$this->mainText,
+			$this->title,
+			$options
+		);
+
 		return $this->output;
 	}
 
 	function getReport() {
 		$s = "Title: " . $this->title->getPrefixedDBkey() . "\n" .
-//			"Output type: {$this->outputType}\n" .
+// 			"Output type: {$this->outputType}\n" .
 			"Entry point: {$this->entryPoint}\n" .
-			"User: " . ( $this->fancySig ? 'fancy' : 'no-fancy' ) . ' ' . var_export( $this->nickname, true ) . "\n" .
+			"User: " . ( $this->fancySig ? 'fancy' : 'no-fancy' ) .
+			' ' . var_export( $this->nickname, true ) . "\n" .
 			"Main text: " . var_export( $this->mainText, true ) . "\n";
 		foreach ( $this->templates as $titleText => $template ) {
 			$finalTitle = $template['finalTitle'];
@@ -212,12 +230,13 @@ class PPFuzzTest {
 			}
 		}
 		$s .= "Output: " . var_export( $this->output, true ) . "\n";
+
 		return $s;
 	}
 }
 
 class PPFuzzUser extends User {
-	var $ppfz_test;
+	public $ppfz_test, $mDataLoaded;
 
 	function load() {
 		if ( $this->mDataLoaded ) {
@@ -227,13 +246,13 @@ class PPFuzzUser extends User {
 		$this->loadDefaults( $this->mName );
 	}
 
-	function getOption( $option, $defaultOverride = '' ) {
-		if ( $option === 'fancysig' ) {
+	function getOption( $oname, $defaultOverride = null, $ignoreHidden = false ) {
+		if ( $oname === 'fancysig' ) {
 			return $this->ppfz_test->fancySig;
-		} elseif ( $option === 'nickname' ) {
+		} elseif ( $oname === 'nickname' ) {
 			return $this->ppfz_test->nickname;
 		} else {
-			return parent::getOption( $option, $defaultOverride );
+			return parent::getOption( $oname, $defaultOverride, $ignoreHidden );
 		}
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * Implements Special:Blankpage
+ * Implements Special:PasswordReset
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,203 +21,153 @@
  * @ingroup SpecialPage
  */
 
+use MediaWiki\Auth\AuthManager;
+
 /**
- * Special page for requesting a password reset email
+ * Special page for requesting a password reset email.
+ *
+ * Requires the TemporaryPasswordPrimaryAuthenticationProvider and the
+ * EmailNotificationSecondaryAuthenticationProvider (or something providing equivalent
+ * functionality) to be enabled.
  *
  * @ingroup SpecialPage
  */
 class SpecialPasswordReset extends FormSpecialPage {
+	/** @var PasswordReset */
+	private $passwordReset = null;
+
+	/**
+	 * @var Status
+	 */
+	private $result;
+
+	/**
+	 * @var string $method Identifies which password reset field was specified by the user.
+	 */
+	private $method;
 
 	public function __construct() {
-		parent::__construct( 'PasswordReset' );
+		parent::__construct( 'PasswordReset', 'editmyprivateinfo' );
+	}
+
+	private function getPasswordReset() {
+		if ( $this->passwordReset === null ) {
+			$this->passwordReset = new PasswordReset( $this->getConfig(), AuthManager::singleton() );
+		}
+		return $this->passwordReset;
+	}
+
+	public function doesWrites() {
+		return true;
 	}
 
 	public function userCanExecute( User $user ) {
-		global $wgPasswordResetRoutes, $wgAuth;
+		return $this->getPasswordReset()->isAllowed( $user )->isGood();
+	}
 
-		// Maybe password resets are disabled, or there are no allowable routes
-		if ( !is_array( $wgPasswordResetRoutes )
-			|| !in_array( true, array_values( $wgPasswordResetRoutes ) ) )
-		{
-			throw new ErrorPageError( 'internalerror', 'passwordreset-disabled' );
+	public function checkExecutePermissions( User $user ) {
+		$status = Status::wrap( $this->getPasswordReset()->isAllowed( $user ) );
+		if ( !$status->isGood() ) {
+			throw new ErrorPageError( 'internalerror', $status->getMessage() );
 		}
 
-		// Maybe the external auth plugin won't allow local password changes
-		if ( !$wgAuth->allowPasswordChange() ) {
-			throw new ErrorPageError( 'internalerror', 'resetpass_forbidden' );
-		}
-
-		// Maybe the user is blocked (check this here rather than relying on the parent
-		// method as we have a more specific error message to use here
-		if ( $user->isBlocked() ) {
-			throw new ErrorPageError( 'internalerror', 'blocked-mailpassword' );
-		}
-
-		return parent::userCanExecute( $user );
+		parent::checkExecutePermissions( $user );
 	}
 
 	protected function getFormFields() {
-		global $wgPasswordResetRoutes;
-		$a = array();
-		if ( isset( $wgPasswordResetRoutes['username'] ) && $wgPasswordResetRoutes['username'] ) {
-			$a['Username'] = array(
+		$resetRoutes = $this->getConfig()->get( 'PasswordResetRoutes' );
+		$a = [];
+		if ( isset( $resetRoutes['username'] ) && $resetRoutes['username'] ) {
+			$a['Username'] = [
 				'type' => 'text',
 				'label-message' => 'passwordreset-username',
-			);
+			];
+
+			if ( $this->getUser()->isLoggedIn() ) {
+				$a['Username']['default'] = $this->getUser()->getName();
+			}
 		}
 
-		if ( isset( $wgPasswordResetRoutes['email'] ) && $wgPasswordResetRoutes['email'] ) {
-			$a['Email'] = array(
+		if ( isset( $resetRoutes['email'] ) && $resetRoutes['email'] ) {
+			$a['Email'] = [
 				'type' => 'email',
 				'label-message' => 'passwordreset-email',
-			);
+			];
 		}
 
 		return $a;
 	}
 
-	protected function preText() {
-		global $wgPasswordResetRoutes;
+	protected function getDisplayFormat() {
+		return 'ooui';
+	}
+
+	public function alterForm( HTMLForm $form ) {
+		$resetRoutes = $this->getConfig()->get( 'PasswordResetRoutes' );
+
+		$form->addHiddenFields( $this->getRequest()->getValues( 'returnto', 'returntoquery' ) );
+
 		$i = 0;
-		if ( isset( $wgPasswordResetRoutes['username'] ) && $wgPasswordResetRoutes['username'] ) {
+		if ( isset( $resetRoutes['username'] ) && $resetRoutes['username'] ) {
 			$i++;
 		}
-		if ( isset( $wgPasswordResetRoutes['email'] ) && $wgPasswordResetRoutes['email'] ) {
+		if ( isset( $resetRoutes['email'] ) && $resetRoutes['email'] ) {
 			$i++;
 		}
-		return wfMessage( 'passwordreset-pretext', $i )->parseAsBlock();
+
+		$message = ( $i > 1 ) ? 'passwordreset-text-many' : 'passwordreset-text-one';
+
+		$form->setHeaderText( $this->msg( $message, $i )->parseAsBlock() );
+		$form->setSubmitTextMsg( 'mailmypassword' );
 	}
 
 	/**
 	 * Process the form.  At this point we know that the user passes all the criteria in
 	 * userCanExecute(), and if the data array contains 'Username', etc, then Username
 	 * resets are allowed.
-	 * @param $data array
-	 * @return Bool|Array
+	 * @param array $data
+	 * @throws MWException
+	 * @throws ThrottledError|PermissionsError
+	 * @return Status
 	 */
 	public function onSubmit( array $data ) {
+		$username = isset( $data['Username'] ) ? $data['Username'] : null;
+		$email = isset( $data['Email'] ) ? $data['Email'] : null;
 
-		if ( isset( $data['Username'] ) && $data['Username'] !== '' ) {
-			$method = 'username';
-			$users = array( User::newFromName( $data['Username'] ) );
-		} elseif ( isset( $data['Email'] )
-			&& $data['Email'] !== ''
-			&& Sanitizer::validateEmail( $data['Email'] ) )
-		{
-			$method = 'email';
-			$res = wfGetDB( DB_SLAVE )->select(
-				'user',
-				'*',
-				array( 'user_email' => $data['Email'] ),
-				__METHOD__
-			);
-			if ( $res ) {
-				$users = array();
-				foreach( $res as $row ){
-					$users[] = User::newFromRow( $row );
-				}
-			} else {
-				// Some sort of database error, probably unreachable
-				throw new MWException( 'Unknown database error in ' . __METHOD__ );
-			}
-		} else {
-			// The user didn't supply any data
-			return false;
-		}
+		$this->method = $username ? 'username' : 'email';
+		$this->result = Status::wrap(
+			$this->getPasswordReset()->execute( $this->getUser(), $username, $email ) );
 
-		// Check for hooks (captcha etc), and allow them to modify the users list
-		$error = array();
-		if ( !wfRunHooks( 'SpecialPasswordResetOnSubmit', array( &$users, $data, &$error ) ) ) {
-			return array( $error );
-		}
-
-		if( count( $users ) == 0 ){
-			if( $method == 'email' ){
-				// Don't reveal whether or not an email address is in use
-				return true;
-			} else {
-				return array( 'noname' );
-			}
-		}
-
-		$firstUser = $users[0];
-		
-		if ( !$firstUser instanceof User || !$firstUser->getID() ) {
-			return array( array( 'nosuchuser', $data['Username'] ) );
-		}
-
-		// Check against the rate limiter
-		if ( $this->getUser()->pingLimiter( 'mailpassword' ) ) {
+		if ( $this->result->hasMessage( 'actionthrottledtext' ) ) {
 			throw new ThrottledError;
 		}
 
-		// Check against password throttle
-		foreach ( $users as $user ) {
-			if ( $user->isPasswordReminderThrottled() ) {
-				global $wgPasswordReminderResendTime;
-				# Round the time in hours to 3 d.p., in case someone is specifying
-				# minutes or seconds.
-				return array( array( 'throttled-mailpassword', round( $wgPasswordReminderResendTime, 3 ) ) );
-			}
-		}
-
-		global $wgServer, $wgScript, $wgNewPasswordExpiry;
-
-		// All the users will have the same email address
-		if ( $firstUser->getEmail() == '' ) {
-			// This won't be reachable from the email route, so safe to expose the username
-			return array( array( 'noemail', $firstUser->getName() ) );
-		}
-
-		// We need to have a valid IP address for the hook, but per bug 18347, we should
-		// send the user's name if they're logged in.
-		$ip = wfGetIP();
-		if ( !$ip ) {
-			return array( 'badipaddress' );
-		}
-		$caller = $this->getUser();
-		wfRunHooks( 'User::mailPasswordInternal', array( &$caller, &$ip, &$firstUser ) );
-		$username = $caller->getName();
-		$msg = IP::isValid( $username )
-			? 'passwordreset-emailtext-ip'
-			: 'passwordreset-emailtext-user';
-
-		$passwords = array();
-		foreach ( $users as $user ) {
-			$password = $user->randomPassword();
-			$user->setNewpassword( $password );
-			$user->saveSettings();
-			$passwords[] = wfMessage( 'passwordreset-emailelement', $user->getName(), $password );
-		}
-		$passwordBlock = implode( "\n\n", $passwords );
-
-		// Send in the user's language; which should hopefully be the same
-		$userLanguage = $firstUser->getOption( 'language' );
-
-		$body = wfMessage( $msg )->inLanguage( $userLanguage );
-		$body->params(
-			$username,
-			$passwordBlock,
-			count( $passwords ),
-			$wgServer . $wgScript,
-			round( $wgNewPasswordExpiry / 86400 )
-		);
-
-		$title = wfMessage( 'passwordreset-emailtitle' );
-
-		$result = $firstUser->sendMail( $title->text(), $body->text() );
-
-		if ( $result->isGood() ) {
-			return true;
-		} else {
-			// FIXME: The email didn't send, but we have already set the password throttle
-			// timestamp, so they won't be able to try again until it expires...  :(
-			return array( array( 'mailerror', $result->getMessage() ) );
-		}
+		return $this->result;
 	}
 
 	public function onSuccess() {
-		$this->getOutput()->addWikiMsg( 'passwordreset-emailsent' );
+		if ( $this->method === 'email' ) {
+			$this->getOutput()->addWikiMsg( 'passwordreset-emailsentemail' );
+		} else {
+			$this->getOutput()->addWikiMsg( 'passwordreset-emailsentusername' );
+		}
+
 		$this->getOutput()->returnToMain();
+	}
+
+	/**
+	 * Hide the password reset page if resets are disabled.
+	 * @return bool
+	 */
+	public function isListed() {
+		if ( $this->getPasswordReset()->isAllowed( $this->getUser() )->isGood() ) {
+			return parent::isListed();
+		}
+
+		return false;
+	}
+
+	protected function getGroupName() {
+		return 'users';
 	}
 }

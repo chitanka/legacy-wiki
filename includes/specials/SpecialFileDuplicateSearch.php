@@ -1,4 +1,6 @@
 <?php
+use MediaWiki\MediaWikiServices;
+
 /**
  * Implements Special:FileDuplicateSearch
  *
@@ -40,18 +42,26 @@ class FileDuplicateSearchPage extends QueryPage {
 		parent::__construct( $name );
 	}
 
-	function isSyndicated() { return false; }
-	function isCacheable() { return false; }
-	function isCached() { return false; }
+	function isSyndicated() {
+		return false;
+	}
+
+	function isCacheable() {
+		return false;
+	}
+
+	public function isCached() {
+		return false;
+	}
 
 	function linkParameters() {
-		return array( 'filename' => $this->filename );
+		return [ 'filename' => $this->filename ];
 	}
 
 	/**
 	 * Fetch dupes from all connected file repositories.
 	 *
-	 * @return Array of File objects
+	 * @return array Array of File objects
 	 */
 	function getDupes() {
 		return RepoGroup::singleton()->findBySha1( $this->hash );
@@ -59,88 +69,97 @@ class FileDuplicateSearchPage extends QueryPage {
 
 	/**
 	 *
-	 * @param Array of File objects $dupes
+	 * @param array $dupes Array of File objects
 	 */
 	function showList( $dupes ) {
-		global $wgUser, $wgOut;
-		$skin = $wgUser->getSkin();
-
-		$html = array();
+		$html = [];
 		$html[] = $this->openList( 0 );
 
 		foreach ( $dupes as $dupe ) {
-			$line = $this->formatResult( $skin, $dupe );
+			$line = $this->formatResult( null, $dupe );
 			$html[] = "<li>" . $line . "</li>";
 		}
 		$html[] = $this->closeList();
 
-		$wgOut->addHtml( implode( "\n", $html ) );
+		$this->getOutput()->addHTML( implode( "\n", $html ) );
 	}
 
-	function getQueryInfo() {
-		return array(
-			'tables' => array( 'image' ),
-			'fields' => array(
-				'img_name AS title',
-				'img_sha1 AS value',
-				'img_user_text',
+	public function getQueryInfo() {
+		$imgQuery = LocalFile::getQueryInfo();
+		return [
+			'tables' => $imgQuery['tables'],
+			'fields' => [
+				'title' => 'img_name',
+				'value' => 'img_sha1',
+				'img_user_text' => $imgQuery['fields']['img_user_text'],
 				'img_timestamp'
-			),
-			'conds' => array( 'img_sha1' => $this->hash )
-		);
+			],
+			'conds' => [ 'img_sha1' => $this->hash ],
+			'join_conds' => $imgQuery['joins'],
+		];
 	}
 
-	function execute( $par ) {
-		global $wgRequest, $wgOut, $wgLang, $wgContLang, $wgScript;
-
+	public function execute( $par ) {
 		$this->setHeaders();
 		$this->outputHeader();
 
-		$this->filename =  isset( $par ) ?  $par : $wgRequest->getText( 'filename' );
+		$this->filename = $par !== null ? $par : $this->getRequest()->getText( 'filename' );
 		$this->file = null;
 		$this->hash = '';
 		$title = Title::newFromText( $this->filename, NS_FILE );
-		if( $title && $title->getText() != '' ) {
+		if ( $title && $title->getText() != '' ) {
 			$this->file = wfFindFile( $title );
 		}
 
-		# Create the input form
-		$wgOut->addHTML(
-			Xml::openElement( 'form', array( 'id' => 'fileduplicatesearch', 'method' => 'get', 'action' => $wgScript ) ) .
-			Html::hidden( 'title', $this->getTitle()->getPrefixedDbKey() ) .
-			Xml::openElement( 'fieldset' ) .
-			Xml::element( 'legend', null, wfMsg( 'fileduplicatesearch-legend' ) ) .
-			Xml::inputLabel( wfMsg( 'fileduplicatesearch-filename' ), 'filename', 'filename', 50, $this->filename ) . ' ' .
-			Xml::submitButton( wfMsg( 'fileduplicatesearch-submit' ) ) .
-			Xml::closeElement( 'fieldset' ) .
-			Xml::closeElement( 'form' )
-		);
+		$out = $this->getOutput();
 
-		if( $this->file ) {
+		# Create the input form
+		$formFields = [
+			'filename' => [
+				'type' => 'text',
+				'name' => 'filename',
+				'label-message' => 'fileduplicatesearch-filename',
+				'id' => 'filename',
+				'size' => 50,
+				'value' => $this->filename,
+			],
+		];
+		$hiddenFields = [
+			'title' => $this->getPageTitle()->getPrefixedDBkey(),
+		];
+		$htmlForm = HTMLForm::factory( 'ooui', $formFields, $this->getContext() );
+		$htmlForm->addHiddenFields( $hiddenFields );
+		$htmlForm->setAction( wfScript() );
+		$htmlForm->setMethod( 'get' );
+		$htmlForm->setSubmitProgressive();
+		$htmlForm->setSubmitTextMsg( $this->msg( 'fileduplicatesearch-submit' ) );
+
+		// The form should be visible always, even if it was submitted (e.g. to perform another action).
+		// To bypass the callback validation of HTMLForm, use prepareForm() and displayForm().
+		$htmlForm->prepareForm()->displayForm( false );
+
+		if ( $this->file ) {
 			$this->hash = $this->file->getSha1();
-		} else {
-			$wgOut->wrapWikiMsg(
+		} elseif ( $this->filename !== '' ) {
+			$out->wrapWikiMsg(
 				"<p class='mw-fileduplicatesearch-noresults'>\n$1\n</p>",
-				array( 'fileduplicatesearch-noresults', wfEscapeWikiText( $this->filename ) )
+				[ 'fileduplicatesearch-noresults', wfEscapeWikiText( $this->filename ) ]
 			);
 		}
 
-		if( $this->hash != '' ) {
-			$align = $wgContLang->alignEnd();
-
+		if ( $this->hash != '' ) {
 			# Show a thumbnail of the file
 			$img = $this->file;
 			if ( $img ) {
-				$thumb = $img->transform( array( 'width' => 120, 'height' => 120 ) );
-				if( $thumb ) {
-					$wgOut->addHTML( '<div style="float:' . $align . '" id="mw-fileduplicatesearch-icon">' .
-						$thumb->toHtml( array( 'desc-link' => false ) ) . '<br />' .
-						wfMsgExt( 'fileduplicatesearch-info', array( 'parse' ),
-							$wgLang->formatNum( $img->getWidth() ),
-							$wgLang->formatNum( $img->getHeight() ),
-							$wgLang->formatSize( $img->getSize() ),
-							$img->getMimeType()
-						) .
+				$thumb = $img->transform( [ 'width' => 120, 'height' => 120 ] );
+				if ( $thumb ) {
+					$out->addModuleStyles( 'mediawiki.special' );
+					$out->addHTML( '<div id="mw-fileduplicatesearch-icon">' .
+						$thumb->toHtml( [ 'desc-link' => false ] ) . '<br />' .
+						$this->msg( 'fileduplicatesearch-info' )->numParams(
+							$img->getWidth(), $img->getHeight() )->params(
+								$this->getLanguage()->formatSize( $img->getSize() ),
+								$img->getMimeType() )->parseAsBlock() .
 						'</div>' );
 				}
 			}
@@ -149,43 +168,100 @@ class FileDuplicateSearchPage extends QueryPage {
 			$numRows = count( $dupes );
 
 			# Show a short summary
-			if( $numRows == 1 ) {
-				$wgOut->wrapWikiMsg(
+			if ( $numRows == 1 ) {
+				$out->wrapWikiMsg(
 					"<p class='mw-fileduplicatesearch-result-1'>\n$1\n</p>",
-					array( 'fileduplicatesearch-result-1', wfEscapeWikiText( $this->filename ) )
+					[ 'fileduplicatesearch-result-1', wfEscapeWikiText( $this->filename ) ]
 				);
 			} elseif ( $numRows ) {
-				$wgOut->wrapWikiMsg(
+				$out->wrapWikiMsg(
 					"<p class='mw-fileduplicatesearch-result-n'>\n$1\n</p>",
-					array( 'fileduplicatesearch-result-n', wfEscapeWikiText( $this->filename ),
-						$wgLang->formatNum( $numRows - 1 ) )
+					[ 'fileduplicatesearch-result-n', wfEscapeWikiText( $this->filename ),
+						$this->getLanguage()->formatNum( $numRows - 1 ) ]
 				);
 			}
 
+			$this->doBatchLookups( $dupes );
 			$this->showList( $dupes );
 		}
+	}
+
+	function doBatchLookups( $list ) {
+		$batch = new LinkBatch();
+		/** @var File $file */
+		foreach ( $list as $file ) {
+			$batch->addObj( $file->getTitle() );
+			if ( $file->isLocal() ) {
+				$userName = $file->getUser( 'text' );
+				$batch->add( NS_USER, $userName );
+				$batch->add( NS_USER_TALK, $userName );
+			}
+		}
+
+		$batch->execute();
 	}
 
 	/**
 	 *
 	 * @param Skin $skin
 	 * @param File $result
-	 * @return string
+	 * @return string HTML
 	 */
 	function formatResult( $skin, $result ) {
-		global $wgContLang, $wgLang;
+		global $wgContLang;
 
+		$linkRenderer = $this->getLinkRenderer();
 		$nt = $result->getTitle();
 		$text = $wgContLang->convert( $nt->getText() );
-		$plink = $skin->link(
-			Title::newFromText( $nt->getPrefixedText() ),
+		$plink = $linkRenderer->makeLink(
+			$nt,
 			$text
 		);
 
 		$userText = $result->getUser( 'text' );
-		$user = $skin->link( Title::makeTitle( NS_USER, $userText ), $userText );
-		$time = $wgLang->timeanddate( $result->getTimestamp() );
+		if ( $result->isLocal() ) {
+			$userId = $result->getUser( 'id' );
+			$user = Linker::userLink( $userId, $userText );
+			$user .= '<span style="white-space: nowrap;">';
+			$user .= Linker::userToolLinks( $userId, $userText );
+			$user .= '</span>';
+		} else {
+			$user = htmlspecialchars( $userText );
+		}
+
+		$time = htmlspecialchars( $this->getLanguage()->userTimeAndDate(
+			$result->getTimestamp(), $this->getUser() ) );
 
 		return "$plink . . $user . . $time";
+	}
+
+	/**
+	 * Return an array of subpages beginning with $search that this special page will accept.
+	 *
+	 * @param string $search Prefix to search for
+	 * @param int $limit Maximum number of results to return (usually 10)
+	 * @param int $offset Number of results to skip (usually 0)
+	 * @return string[] Matching subpages
+	 */
+	public function prefixSearchSubpages( $search, $limit, $offset ) {
+		$title = Title::newFromText( $search, NS_FILE );
+		if ( !$title || $title->getNamespace() !== NS_FILE ) {
+			// No prefix suggestion outside of file namespace
+			return [];
+		}
+		$searchEngine = MediaWikiServices::getInstance()->newSearchEngine();
+		$searchEngine->setLimitOffset( $limit, $offset );
+		// Autocomplete subpage the same as a normal search, but just for files
+		$searchEngine->setNamespaces( [ NS_FILE ] );
+		$result = $searchEngine->defaultPrefixSearch( $search );
+
+		return array_map( function ( Title $t ) {
+			// Remove namespace in search suggestion
+			return $t->getText();
+		}, $result );
+	}
+
+	protected function getGroupName() {
+		return 'media';
 	}
 }

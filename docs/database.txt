@@ -7,8 +7,8 @@ By Tim Starling, January 2006.
 
 For information about the MediaWiki database layout, such as a 
 description of the tables and their contents, please see:
-  http://www.mediawiki.org/wiki/Manual:Database_layout
-  http://svn.wikimedia.org/viewvc/mediawiki/trunk/phase3/maintenance/tables.sql?view=markup
+  https://www.mediawiki.org/wiki/Manual:Database_layout
+  https://phabricator.wikimedia.org/diffusion/MW/browse/master/maintenance/tables.sql
 
 
 ------------------------------------------------------------------------
@@ -17,7 +17,7 @@ description of the tables and their contents, please see:
 
 To make a read query, something like this usually suffices:
 
-$dbr = wfGetDB( DB_SLAVE );
+$dbr = wfGetDB( DB_REPLICA );
 $res = $dbr->select( /* ...see docs... */ );
 foreach ( $res as $row ) {
 	...
@@ -153,16 +153,13 @@ enclose small groups of queries in their own transaction. Use the
 following syntax:
 
 $dbw = wfGetDB( DB_MASTER );
-$dbw->begin();
+$dbw->begin( __METHOD__ );
 /* Do queries */
-$dbw->commit();
+$dbw->commit( __METHOD__ );
 
 Use of locking reads (e.g. the FOR UPDATE clause) is not advised. They
 are poorly implemented in InnoDB and will cause regular deadlock errors.
-It's also surprisingly easy to cripple the wiki with lock contention. If
-you must use them, define a new flag for $wgAntiLockFlags which allows
-them to be turned off, because we'll almost certainly need to do so on
-the Wikimedia cluster.
+It's also surprisingly easy to cripple the wiki with lock contention.
 
 Instead of locking reads, combine your existence checks into your write
 queries, by using an appropriate condition in the WHERE clause of an
@@ -180,7 +177,6 @@ MediaWiki does support the following other DBMSs to varying degrees.
 * PostgreSQL
 * SQLite
 * Oracle
-* IBM DB2
 * MSSQL
 
 More information can be found about each of these databases (known issues,

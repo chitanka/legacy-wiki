@@ -1,6 +1,6 @@
 <?php
 /**
- * Script to print out duplicates in message array
+ * Print out duplicates in message array
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,8 +21,9 @@
  * @ingroup MaintenanceLanguage
  */
 
-require_once( dirname( __FILE__ ) . '/../commandLine.inc' );
-$messagesDir = dirname( __FILE__ ) . '/../../languages/messages/';
+$optionsWithArgs = [ 'lang', 'clang', 'mode' ];
+require_once __DIR__ . '/../commandLine.inc';
+$messagesDir = __DIR__ . '/../../languages/messages/';
 $runTest = false;
 $run = false;
 $runMode = 'text';
@@ -34,9 +35,9 @@ if ( isset( $options['lang'] ) && isset( $options['clang'] ) ) {
 	} else {
 		if ( !strcmp( $options['mode'], 'wiki' ) ) {
 			$runMode = 'wiki';
-		} else if ( !strcmp( $options['mode'], 'php' ) ) {
+		} elseif ( !strcmp( $options['mode'], 'php' ) ) {
 			$runMode = 'php';
-		} else if ( !strcmp( $options['mode'], 'raw' ) ) {
+		} elseif ( !strcmp( $options['mode'], 'raw' ) ) {
 			$runMode = 'raw';
 		} else {
 		}
@@ -52,7 +53,7 @@ Options:
 	* mode:  Output format, can be either:
 		* text:   Text output on the console (default)
 		* wiki:   Wiki format, with * at beginning of each line
-		* php:    Output text as PHP syntax in a array $dupeMessages
+		* php:    Output text as PHP syntax in an array named \$dupeMessages
 		* raw:    Raw output for duplicates
 TEXT;
 }
@@ -67,8 +68,7 @@ if ( $runTest ) {
 	$messagesFileC = $messagesDir . 'Messages' . $langCodeFC . '.php';
 	if ( file_exists( $messagesFile ) && file_exists( $messagesFileC ) ) {
 		$run = true;
-	}
-	else {
+	} else {
 		echo "Messages file(s) could not be found.\nMake sure both files are exists.\n";
 	}
 }
@@ -77,38 +77,39 @@ if ( $runTest ) {
 if ( $run ) {
 	if ( !strcmp( $runMode, 'wiki' ) ) {
 		$runMode = 'wiki';
-	} else if ( !strcmp( $runMode, 'raw' ) ) {
+	} elseif ( !strcmp( $runMode, 'raw' ) ) {
 		$runMode = 'raw';
 	}
-	include( $messagesFile );
+	include $messagesFile;
 	$messageExist = isset( $messages );
-	if ( $messageExist )
+	if ( $messageExist ) {
 		$wgMessages[$langCode] = $messages;
-	include( $messagesFileC );
+	}
+	include $messagesFileC;
 	$messageCExist = isset( $messages );
-	if ( $messageCExist )
+	if ( $messageCExist ) {
 		$wgMessages[$langCodeC] = $messages;
+	}
 	$count = 0;
 
 	if ( ( $messageExist ) && ( $messageCExist ) ) {
-
 		if ( !strcmp( $runMode, 'php' ) ) {
-			print( "<?php\n" );
-			print( '$dupeMessages = array(' . "\n" );
+			print "<?php\n";
+			print '$dupeMessages = [' . "\n";
 		}
 		foreach ( $wgMessages[$langCodeC] as $key => $value ) {
 			foreach ( $wgMessages[$langCode] as $ckey => $cvalue ) {
 				if ( !strcmp( $key, $ckey ) ) {
 					if ( ( !strcmp( $key, $ckey ) ) && ( !strcmp( $value, $cvalue ) ) ) {
 						if ( !strcmp( $runMode, 'raw' ) ) {
-							print( "$key\n" );
-						} else if ( !strcmp( $runMode, 'php' ) ) {
-							print( "'$key' => '',\n" );
-						} else if ( !strcmp( $runMode, 'wiki' ) ) {
+							print "$key\n";
+						} elseif ( !strcmp( $runMode, 'php' ) ) {
+							print "'$key' => '',\n";
+						} elseif ( !strcmp( $runMode, 'wiki' ) ) {
 							$uKey = ucfirst( $key );
-							print( "* MediaWiki:$uKey/$langCode\n" );
+							print "* MediaWiki:$uKey/$langCode\n";
 						} else {
-							print( "* $key\n" );
+							print "* $key\n";
 						}
 						$count++;
 					}
@@ -116,7 +117,7 @@ if ( $run ) {
 			}
 		}
 		if ( !strcmp( $runMode, 'php' ) ) {
-			print( ");\n" );
+			print "];\n";
 		}
 		if ( !strcmp( $runMode, 'text' ) ) {
 			if ( $count == 1 ) {
@@ -126,9 +127,11 @@ if ( $run ) {
 			}
 		}
 	} else {
-		if ( !$messageExist )
+		if ( !$messageExist ) {
 			echo "There are no messages defined in $langCode.\n";
-		if ( !$messageCExist )
+		}
+		if ( !$messageCExist ) {
 			echo "There are no messages defined in $langCodeC.\n";
+		}
 	}
 }

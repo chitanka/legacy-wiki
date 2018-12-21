@@ -1,6 +1,6 @@
 <?php
 /**
- * Script to normalize double-byte latin UTF-8 characters
+ * Normalize double-byte latin UTF-8 characters
  *
  * Usage: php updateDoubleWidthSearch.php
  *
@@ -23,15 +23,25 @@
  * @ingroup Maintenance
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+/**
+ * Maintenance script to normalize double-byte latin UTF-8 characters.
+ *
+ * @ingroup Maintenance
+ */
 class UpdateDoubleWidthSearch extends Maintenance {
 
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Script to normalize double-byte latin UTF-8 characters";
+		$this->addDescription( 'Script to normalize double-byte latin UTF-8 characters' );
 		$this->addOption( 'q', 'quiet', false, true );
-		$this->addOption( 'l', 'How long the searchindex and revision tables will be locked for', false, true );
+		$this->addOption(
+			'l',
+			'How long the searchindex and revision tables will be locked for',
+			false,
+			true
+		);
 	}
 
 	public function getDbType() {
@@ -41,13 +51,13 @@ class UpdateDoubleWidthSearch extends Maintenance {
 	public function execute() {
 		$maxLockTime = $this->getOption( 'l', 20 );
 
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = $this->getDB( DB_MASTER );
 		if ( $dbw->getType() !== 'mysql' ) {
-			$this->error( "This change is only needed on MySQL, quitting.\n", true );
+			$this->fatalError( "This change is only needed on MySQL, quitting.\n" );
 		}
 
 		$res = $this->findRows( $dbw );
-		$this->updateSearchIndex( $maxLockTime, array( $this, 'searchIndexUpdateCallback' ), $dbw, $res );
+		$this->updateSearchIndex( $maxLockTime, [ $this, 'searchIndexUpdateCallback' ], $dbw, $res );
 
 		$this->output( "Done\n" );
 	}
@@ -62,9 +72,10 @@ class UpdateDoubleWidthSearch extends Maintenance {
 		$sql = "SELECT si_page FROM $searchindex
 				 WHERE ( si_text RLIKE '$regexp' )
 					OR ( si_title RLIKE '$regexp' )";
+
 		return $dbw->query( $sql, __METHOD__ );
 	}
 }
 
-$maintClass = "UpdateDoubleWidthSearch";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = UpdateDoubleWidthSearch::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

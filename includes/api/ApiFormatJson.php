@@ -1,10 +1,6 @@
 <?php
 /**
- *
- *
- * Created on Sep 19, 2006
- *
- * Copyright © 2006 Yuri Astrakhan <Firstname><Lastname>@gmail.com
+ * Copyright © 2006 Yuri Astrakhan "<Firstname><Lastname>@gmail.com"
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,79 +20,115 @@
  * @file
  */
 
-if ( !defined( 'MEDIAWIKI' ) ) {
-	// Eclipse helper - will be ignored in production
-	require_once( 'ApiFormatBase.php' );
-}
-
 /**
  * API JSON output formatter
  * @ingroup API
  */
 class ApiFormatJson extends ApiFormatBase {
 
-	private $mIsRaw;
+	private $isRaw;
 
-	public function __construct( $main, $format ) {
+	public function __construct( ApiMain $main, $format ) {
 		parent::__construct( $main, $format );
-		$this->mIsRaw = ( $format === 'rawfm' );
+		$this->isRaw = ( $format === 'rawfm' );
+
+		if ( $this->getMain()->getCheck( 'callback' ) ) {
+			# T94015: jQuery appends a useless '_' parameter in jsonp mode.
+			# Mark the parameter as used in that case to avoid a warning that's
+			# outside the control of the end user.
+			# (and do it here because ApiMain::reportUnusedParams() gets called
+			# before our ::execute())
+			$this->getMain()->markParamsUsed( '_' );
+		}
 	}
 
 	public function getMimeType() {
 		$params = $this->extractRequestParams();
 		// callback:
-		if ( $params['callback'] ) {
+		if ( isset( $params['callback'] ) ) {
 			return 'text/javascript';
 		}
+
 		return 'application/json';
 	}
 
-	public function getNeedsRawData() {
-		return $this->mIsRaw;
-	}
-
-	public function getWantsHelp() {
-		// Help is always ugly in JSON
-		return false;
-	}
-
 	public function execute() {
-		$prefix = $suffix = '';
-
 		$params = $this->extractRequestParams();
-		$callback = $params['callback'];
-		if ( !is_null( $callback ) ) {
-			$prefix = preg_replace( "/[^][.\\'\\\"_A-Za-z0-9]/", '', $callback ) . '(';
-			$suffix = ')';
+
+		$opt = 0;
+		if ( $this->isRaw ) {
+			$opt |= FormatJson::ALL_OK;
+			$transform = [];
+		} else {
+			switch ( $params['formatversion'] ) {
+				case 1:
+					$opt |= $params['utf8'] ? FormatJson::ALL_OK : FormatJson::XMLMETA_OK;
+					$transform = [
+						'BC' => [],
+						'Types' => [ 'AssocAsObject' => true ],
+						'Strip' => 'all',
+					];
+					break;
+
+				case 2:
+				case 'latest':
+					$opt |= $params['ascii'] ? FormatJson::XMLMETA_OK : FormatJson::ALL_OK;
+					$transform = [
+						'Types' => [ 'AssocAsObject' => true ],
+						'Strip' => 'all',
+					];
+					break;
+
+				default:
+					// Should have been caught during parameter validation
+					$this->dieDebug( __METHOD__, 'Unknown value for \'formatversion\'' );
+			}
 		}
-		$this->printText(
-			$prefix .
-			FormatJson::encode( $this->getResultData(), $this->getIsHtml() ) .
-			$suffix
-		);
+		$data = $this->getResult()->getResultData( null, $transform );
+		$json = FormatJson::encode( $data, $this->getIsHtml(), $opt );
+
+		// T68776: OutputHandler::mangleFlashPolicy() avoids a nasty bug in
+		// Flash, but what it does isn't friendly for the API, so we need to
+		// work around it.
+		if ( preg_match( '/\<\s*cross-domain-policy(?=\s|\>)/i', $json ) ) {
+			$json = preg_replace(
+				'/\<(\s*cross-domain-policy(?=\s|\>))/i', '\\u003C$1', $json
+			);
+		}
+
+		if ( isset( $params['callback'] ) ) {
+			$callback = preg_replace( "/[^][.\\'\\\"_A-Za-z0-9]/", '', $params['callback'] );
+			# Prepend a comment to try to avoid attacks against content
+			# sniffers, such as T70187.
+			$this->printText( "/**/$callback($json)" );
+		} else {
+			$this->printText( $json );
+		}
 	}
 
 	public function getAllowedParams() {
-		return array(
-			'callback'  => null,
-		);
-	}
-
-	public function getParamDescription() {
-		return array(
-			'callback' => 'If specified, wraps the output into a given function call. For safety, all user-specific data will be restricted.',
-		);
-	}
-
-	public function getDescription() {
-		if ( $this->mIsRaw ) {
-			return 'Output data with the debuging elements in JSON format' . parent::getDescription();
-		} else {
-			return 'Output data in JSON format' . parent::getDescription();
+		if ( $this->isRaw ) {
+			return parent::getAllowedParams();
 		}
-	}
 
-	public function getVersion() {
-		return __CLASS__ . ': $Id: ApiFormatJson.php 78829 2010-12-22 20:52:06Z reedy $';
+		$ret = parent::getAllowedParams() + [
+			'callback' => [
+				ApiBase::PARAM_HELP_MSG => 'apihelp-json-param-callback',
+			],
+			'utf8' => [
+				ApiBase::PARAM_DFLT => false,
+				ApiBase::PARAM_HELP_MSG => 'apihelp-json-param-utf8',
+			],
+			'ascii' => [
+				ApiBase::PARAM_DFLT => false,
+				ApiBase::PARAM_HELP_MSG => 'apihelp-json-param-ascii',
+			],
+			'formatversion' => [
+				ApiBase::PARAM_TYPE => [ '1', '2', 'latest' ],
+				ApiBase::PARAM_DFLT => '1',
+				ApiBase::PARAM_HELP_MSG => 'apihelp-json-param-formatversion',
+			],
+		];
+		return $ret;
 	}
 }

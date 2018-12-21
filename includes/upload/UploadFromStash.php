@@ -1,100 +1,161 @@
 <?php
 /**
- * Implements uploading from previously stored file.
+ * Backend for uploading files from previously stored file.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * http://www.gnu.org/copyleft/gpl.html
  *
  * @file
- * @ingroup upload
- * @author Bryan Tong Minh
+ * @ingroup Upload
  */
 
+/**
+ * Implements uploading from previously stored file.
+ *
+ * @ingroup Upload
+ * @author Bryan Tong Minh
+ */
 class UploadFromStash extends UploadBase {
+	protected $mFileKey;
+	protected $mVirtualTempPath;
+	protected $mFileProps;
+	protected $mSourceType;
 
-	protected $initializePathInfo, $mSessionKey, $mVirtualTempPath,
-		$mFileProps, $mSourceType;
+	// an instance of UploadStash
+	private $stash;
 
-	public static function isValidSessionKey( $key, $sessionData ) {
-		return !empty( $key ) &&
-			is_array( $sessionData ) &&
-			isset( $sessionData[$key] ) &&
-			isset( $sessionData[$key]['version'] ) &&
-			$sessionData[$key]['version'] == UploadBase::SESSION_VERSION;
+	// LocalFile repo
+	private $repo;
+
+	/**
+	 * @param User|bool $user Default: false
+	 * @param UploadStash|bool $stash Default: false
+	 * @param FileRepo|bool $repo Default: false
+	 */
+	public function __construct( $user = false, $stash = false, $repo = false ) {
+		// user object. sometimes this won't exist, as when running from cron.
+		$this->user = $user;
+
+		if ( $repo ) {
+			$this->repo = $repo;
+		} else {
+			$this->repo = RepoGroup::singleton()->getLocalRepo();
+		}
+
+		if ( $stash ) {
+			$this->stash = $stash;
+		} else {
+			if ( $user ) {
+				wfDebug( __METHOD__ . " creating new UploadStash instance for " . $user->getId() . "\n" );
+			} else {
+				wfDebug( __METHOD__ . " creating new UploadStash instance with no user\n" );
+			}
+
+			$this->stash = new UploadStash( $this->repo, $this->user );
+		}
 	}
 
 	/**
-	 * @param $request WebRequest
-	 *
-	 * @return Boolean
+	 * @param string $key
+	 * @return bool
 	 */
-	public static function isValidRequest( $request ) {
-		$sessionData = $request->getSessionData( UploadBase::SESSION_KEYNAME );
-		return self::isValidSessionKey(
-			$request->getText( 'wpSessionKey' ),
-			$sessionData
-		);
+	public static function isValidKey( $key ) {
+		// this is checked in more detail in UploadStash
+		return (bool)preg_match( UploadStash::KEY_FORMAT_REGEX, $key );
 	}
 
-	public function initialize( $name, $sessionKey, $sessionData ) {
+	/**
+	 * @param WebRequest $request
+	 * @return bool
+	 */
+	public static function isValidRequest( $request ) {
+		// this passes wpSessionKey to getText() as a default when wpFileKey isn't set.
+		// wpSessionKey has no default which guarantees failure if both are missing
+		// (though that should have been caught earlier)
+		return self::isValidKey( $request->getText( 'wpFileKey', $request->getText( 'wpSessionKey' ) ) );
+	}
+
+	/**
+	 * @param string $key
+	 * @param string $name
+	 * @param bool $initTempFile
+	 */
+	public function initialize( $key, $name = 'upload_file', $initTempFile = true ) {
 		/**
 		 * Confirming a temporarily stashed upload.
 		 * We don't want path names to be forged, so we keep
 		 * them in the session on the server and just give
 		 * an opaque key to the user agent.
 		 */
-
+		$metadata = $this->stash->getMetadata( $key );
 		$this->initializePathInfo( $name,
-			$this->getRealPath ( $sessionData['mTempPath'] ),
-			$sessionData['mFileSize'],
+			$initTempFile ? $this->getRealPath( $metadata['us_path'] ) : false,
+			$metadata['us_size'],
 			false
 		);
 
-		$this->mSessionKey = $sessionKey;
-		$this->mVirtualTempPath = $sessionData['mTempPath'];
-		$this->mFileProps = $sessionData['mFileProps'];
-		$this->mSourceType = isset( $sessionData['mSourceType'] ) ?
-			$sessionData['mSourceType'] : null;
+		$this->mFileKey = $key;
+		$this->mVirtualTempPath = $metadata['us_path'];
+		$this->mFileProps = $this->stash->getFileProps( $key );
+		$this->mSourceType = $metadata['us_source_type'];
 	}
 
 	/**
-	 * @param $request WebRequest
+	 * @param WebRequest &$request
 	 */
 	public function initializeFromRequest( &$request ) {
-		$sessionKey = $request->getText( 'wpSessionKey' );
-		$sessionData = $request->getSessionData( UploadBase::SESSION_KEYNAME );
+		// sends wpSessionKey as a default when wpFileKey is missing
+		$fileKey = $request->getText( 'wpFileKey', $request->getText( 'wpSessionKey' ) );
 
-		$desiredDestName = $request->getText( 'wpDestFile' );
-		if( !$desiredDestName )
-			$desiredDestName = $request->getText( 'wpUploadFile' );
-		return $this->initialize( $desiredDestName, $sessionKey, $sessionData[$sessionKey] );
-	}
+		// chooses one of wpDestFile, wpUploadFile, filename in that order.
+		$desiredDestName = $request->getText(
+			'wpDestFile',
+			$request->getText( 'wpUploadFile', $request->getText( 'filename' ) )
+		);
 
-	public function getSourceType() { 
-		return $this->mSourceType; 
-	}
-
-	/**
-	 * File has been previously verified so no need to do so again.
-	 */
-	protected function verifyFile() {
-		return true;
+		$this->initialize( $fileKey, $desiredDestName );
 	}
 
 	/**
-	 * There is no need to stash the image twice
+	 * @return string
 	 */
-	public function stashSession( $key = null ) {
-		if ( !empty( $this->mSessionKey ) )
-			return $this->mSessionKey;
-		return parent::stashSession();
+	public function getSourceType() {
+		return $this->mSourceType;
+	}
+
+	/**
+	 * Get the base 36 SHA1 of the file
+	 * @return string
+	 */
+	public function getTempFileSha1Base36() {
+		return $this->mFileProps['sha1'];
 	}
 
 	/**
 	 * Remove a temporarily kept file stashed by saveTempUploadedFile().
-	 * @return success
+	 * @return bool Success
 	 */
 	public function unsaveUploadedFile() {
-		$repo = RepoGroup::singleton()->getLocalRepo();
-		$success = $repo->freeTemp( $this->mVirtualTempPath );
-		return $success;
+		return $this->stash->removeFile( $this->mFileKey );
 	}
 
+	/**
+	 * Remove the database record after a successful upload.
+	 */
+	public function postProcessUpload() {
+		parent::postProcessUpload();
+		$this->unsaveUploadedFile();
+	}
 }

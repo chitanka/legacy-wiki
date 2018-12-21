@@ -1,6 +1,6 @@
 <?php
 /**
- * Protect or unprotect an article.
+ * Protect or unprotect a page.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,27 +17,34 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * http://www.gnu.org/copyleft/gpl.html
  *
+ * @file
  * @ingroup Maintenance
  */
 
-require_once( dirname( __FILE__ ) . '/Maintenance.php' );
+require_once __DIR__ . '/Maintenance.php';
 
+/**
+ * Maintenance script that protects or unprotects a page.
+ *
+ * @ingroup Maintenance
+ */
 class Protect extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Protect or unprotect an article from the command line.";
+		$this->addDescription( 'Protect or unprotect a page from the command line.' );
 		$this->addOption( 'unprotect', 'Removes protection' );
 		$this->addOption( 'semiprotect', 'Adds semi-protection' );
-		$this->addOption( 'u', 'Username to protect with', false, true );
-		$this->addOption( 'r', 'Reason for un/protection', false, true );
+		$this->addOption( 'cascade', 'Add cascading protection' );
+		$this->addOption( 'user', 'Username to protect with', false, true, 'u' );
+		$this->addOption( 'reason', 'Reason for un/protection', false, true, 'r' );
 		$this->addArg( 'title', 'Title to protect', true );
 	}
 
 	public function execute() {
-		global $wgUser;
+		$userName = $this->getOption( 'user', false );
+		$reason = $this->getOption( 'reason', '' );
 
-		$userName = $this->getOption( 'u', 'Maintenance script' );
-		$reason = $this->getOption( 'r', '' );
+		$cascade = $this->hasOption( 'cascade' );
 
 		$protection = "sysop";
 		if ( $this->hasOption( 'semiprotect' ) ) {
@@ -46,20 +53,35 @@ class Protect extends Maintenance {
 			$protection = "";
 		}
 
-		$wgUser = User::newFromName( $userName );
-		$restrictions = array( 'edit' => $protection, 'move' => $protection );
+		if ( $userName === false ) {
+			$user = User::newSystemUser( 'Maintenance script', [ 'steal' => true ] );
+		} else {
+			$user = User::newFromName( $userName );
+		}
+		if ( !$user ) {
+			$this->fatalError( "Invalid username" );
+		}
+
+		// @todo FIXME: This is reset 7 lines down.
+		$restrictions = [ 'edit' => $protection, 'move' => $protection ];
 
 		$t = Title::newFromText( $this->getArg() );
 		if ( !$t ) {
-			$this->error( "Invalid title", true );
+			$this->fatalError( "Invalid title" );
 		}
 
-		$article = new Article( $t );
+		$restrictions = [];
+		foreach ( $t->getRestrictionTypes() as $type ) {
+			$restrictions[$type] = $protection;
+		}
 
 		# un/protect the article
 		$this->output( "Updating protection status... " );
-		$success = $article->updateRestrictions( $restrictions, $reason );
-		if ( $success ) {
+
+		$page = WikiPage::factory( $t );
+		$status = $page->doUpdateRestrictions( $restrictions, [], $cascade, $reason, $user );
+
+		if ( $status->isOK() ) {
 			$this->output( "done\n" );
 		} else {
 			$this->output( "failed\n" );
@@ -67,5 +89,5 @@ class Protect extends Maintenance {
 	}
 }
 
-$maintClass = "Protect";
-require_once( RUN_MAINTENANCE_IF_MAIN );
+$maintClass = Protect::class;
+require_once RUN_MAINTENANCE_IF_MAIN;

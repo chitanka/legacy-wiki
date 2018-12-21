@@ -1,9 +1,26 @@
 <?php
-class XmlJs extends PHPUnit_Framework_TestCase {
-	public function testConstruction() {
-		$obj = new XmlJsCode( null );
-		$this->assertNull( $obj->value );
-		$obj = new XmlJsCode( '' );
-		$this->assertSame( $obj->value, '' );
+
+/**
+ * @group Xml
+ */
+class XmlJsTest extends PHPUnit\Framework\TestCase {
+
+	use MediaWikiCoversValidator;
+
+	/**
+	 * @covers XmlJsCode::__construct
+	 * @dataProvider provideConstruction
+	 */
+	public function testConstruction( $value ) {
+		$obj = new XmlJsCode( $value );
+		$this->assertEquals( $value, $obj->value );
 	}
+
+	public static function provideConstruction() {
+		return [
+			[ null ],
+			[ '' ],
+		];
+	}
+
 }

@@ -6,7 +6,7 @@
  * Available feeds are defined in Defines.php
  *
  * Copyright © 2004 Brion Vibber <brion@pobox.com>
- * http://www.mediawiki.org/
+ * https://www.mediawiki.org/
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,54 +36,46 @@
  * @ingroup Feed
  */
 class FeedItem {
-	/**#@+
-	 * @var string
-	 * @private
-	 */
-	var $Title = 'Wiki';
-	var $Description = '';
-	var $Url = '';
-	var $Date = '';
-	var $Author = '';
-	var $UniqueId = '';
-	var $RSSIsPermalink;
-	/**#@-*/
+	/** @var Title */
+	public $title;
+
+	public $description;
+
+	public $url;
+
+	public $date;
+
+	public $author;
+
+	public $uniqueId;
+
+	public $comments;
+
+	public $rssIsPermalink = false;
 
 	/**
-	 * Constructor
-	 *
-	 * @param $Title String: Item's title
-	 * @param $Description String
-	 * @param $Url String: URL uniquely designating the item.
-	 * @param $Date String: Item's date
-	 * @param $Author String: Author's user name
-	 * @param $Comments String
+	 * @param string|Title $title Item's title
+	 * @param string $description
+	 * @param string $url URL uniquely designating the item.
+	 * @param string $date Item's date
+	 * @param string $author Author's user name
+	 * @param string $comments
 	 */
-	function __construct( $Title, $Description, $Url, $Date = '', $Author = '', $Comments = '' ) {
-		$this->Title = $Title;
-		$this->Description = $Description;
-		$this->Url = $Url;
-		$this->UniqueId = $Url;
-		$this->RSSIsPermalink = false;
-		$this->Date = $Date;
-		$this->Author = $Author;
-		$this->Comments = $Comments;
-	}
-
-	/**
-	 * Get the last touched timestamp
-	 *
-	 * @return String last-touched timestamp
-	 */
-	public function getLastMod() {
-		return $this->Title->getTouched();
+	function __construct( $title, $description, $url, $date = '', $author = '', $comments = '' ) {
+		$this->title = $title;
+		$this->description = $description;
+		$this->url = $url;
+		$this->uniqueId = $url;
+		$this->date = $date;
+		$this->author = $author;
+		$this->comments = $comments;
 	}
 
 	/**
 	 * Encode $string so that it can be safely embedded in a XML document
 	 *
-	 * @param $string String: string to encode
-	 * @return String
+	 * @param string $string String to encode
+	 * @return string
 	 */
 	public function xmlEncode( $string ) {
 		$string = str_replace( "\r\n", "\n", $string );
@@ -92,106 +84,141 @@ class FeedItem {
 	}
 
 	/**
-	 * Get the unique id of this item
-	 *
-	 * @return String
+	 * Get the unique id of this item; already xml-encoded
+	 * @return string
 	 */
-	public function getUniqueId() {
-		if ( $this->UniqueId ) {
-			return $this->xmlEncode( $this->UniqueId );
+	public function getUniqueID() {
+		$id = $this->getUniqueIdUnescaped();
+		if ( $id ) {
+			return $this->xmlEncode( $id );
 		}
 	}
 
 	/**
-	 * set the unique id of an item
-	 *
-	 * @param $uniqueId String: unique id for the item
-	 * @param $RSSisPermalink Boolean: set to true if the guid (unique id) is a permalink (RSS feeds only)
+	 * Get the unique id of this item, without any escaping
+	 * @return string
 	 */
-	public function setUniqueId($uniqueId, $RSSisPermalink = false) {
-		$this->UniqueId = $uniqueId;
-		$this->RSSIsPermalink = $RSSisPermalink;
+	public function getUniqueIdUnescaped() {
+		if ( $this->uniqueId ) {
+			return wfExpandUrl( $this->uniqueId, PROTO_CURRENT );
+		}
+	}
+
+	/**
+	 * Set the unique id of an item
+	 *
+	 * @param string $uniqueId Unique id for the item
+	 * @param bool $rssIsPermalink Set to true if the guid (unique id) is a permalink (RSS feeds only)
+	 */
+	public function setUniqueId( $uniqueId, $rssIsPermalink = false ) {
+		$this->uniqueId = $uniqueId;
+		$this->rssIsPermalink = $rssIsPermalink;
 	}
 
 	/**
 	 * Get the title of this item; already xml-encoded
 	 *
-	 * @return String
+	 * @return string
 	 */
 	public function getTitle() {
-		return $this->xmlEncode( $this->Title );
-	}
-
-	/**
-	 * Get the DB prefixed title
-	 *
-	 * @return String the prefixed title, with underscores and
-	 *  any interwiki and namespace prefixes
-	 */
-	public function getDBPrefixedTitle() {
-		return $this->Title->getPrefixedDBKey();
+		return $this->xmlEncode( $this->title );
 	}
 
 	/**
 	 * Get the URL of this item; already xml-encoded
 	 *
-	 * @return String
+	 * @return string
 	 */
 	public function getUrl() {
-		return $this->xmlEncode( $this->Url );
+		return $this->xmlEncode( $this->url );
+	}
+
+	/** Get the URL of this item without any escaping
+	 *
+	 * @return string
+	 */
+	public function getUrlUnescaped() {
+		return $this->url;
 	}
 
 	/**
 	 * Get the description of this item; already xml-encoded
 	 *
-	 * @return String
+	 * @return string
 	 */
 	public function getDescription() {
-		return $this->xmlEncode( $this->Description );
+		return $this->xmlEncode( $this->description );
+	}
+
+	/**
+	 * Get the description of this item without any escaping
+	 *
+	 * @return string
+	 */
+	public function getDescriptionUnescaped() {
+		return $this->description;
 	}
 
 	/**
 	 * Get the language of this item
 	 *
-	 * @return String
+	 * @return string
 	 */
 	public function getLanguage() {
 		global $wgLanguageCode;
-		return $wgLanguageCode;
+		return LanguageCode::bcp47( $wgLanguageCode );
 	}
 
 	/**
-	 * Get the title of this item
+	 * Get the date of this item
 	 *
-	 * @return String
+	 * @return string
 	 */
 	public function getDate() {
-		return $this->Date;
+		return $this->date;
 	}
 
 	/**
 	 * Get the author of this item; already xml-encoded
 	 *
-	 * @return String
+	 * @return string
 	 */
 	public function getAuthor() {
-		return $this->xmlEncode( $this->Author );
+		return $this->xmlEncode( $this->author );
+	}
+
+	/**
+	 * Get the author of this item without any escaping
+	 *
+	 * @return string
+	 */
+	public function getAuthorUnescaped() {
+		return $this->author;
 	}
 
 	/**
 	 * Get the comment of this item; already xml-encoded
 	 *
-	 * @return String
+	 * @return string
 	 */
 	public function getComments() {
-		return $this->xmlEncode( $this->Comments );
+		return $this->xmlEncode( $this->comments );
+	}
+
+	/**
+	 * Get the comment of this item without any escaping
+	 *
+	 * @return string
+	 */
+	public function getCommentsUnescaped() {
+		return $this->comments;
 	}
 
 	/**
 	 * Quickie hack... strip out wikilinks to more legible form from the comment.
 	 *
-	 * @param $text String: wikitext
-	 * @return String
+	 * @param string $text Wikitext
+	 * @return string
 	 */
 	public static function stripComment( $text ) {
 		return preg_replace( '/\[\[([^]]*\|)?([^]]+)\]\]/', '\2', $text );
@@ -200,37 +227,55 @@ class FeedItem {
 }
 
 /**
- * @todo document (needs one-sentence top-level class description).
+ * Class to support the outputting of syndication feeds in Atom and RSS format.
+ *
  * @ingroup Feed
  */
-class ChannelFeed extends FeedItem {
-	/**#@+
-	 * Abstract function, override!
-	 * @abstract
+abstract class ChannelFeed extends FeedItem {
+
+	/** @var TemplateParser */
+	protected $templateParser;
+
+	/**
+	 * @param string|Title $title Feed's title
+	 * @param string $description
+	 * @param string $url URL uniquely designating the feed.
+	 * @param string $date Feed's date
+	 * @param string $author Author's user name
+	 * @param string $comments
 	 */
+	function __construct( $title, $description, $url, $date = '', $author = '', $comments = '' ) {
+		parent::__construct( $title, $description, $url, $date, $author, $comments );
+		$this->templateParser = new TemplateParser();
+	}
 
 	/**
 	 * Generate Header of the feed
+	 * @par Example:
+	 * @code
+	 * print "<feed>";
+	 * @endcode
 	 */
-	function outHeader() {
-		# print "<feed>";
-	}
+	abstract public function outHeader();
 
 	/**
 	 * Generate an item
-	 * @param $item
+	 * @par Example:
+	 * @code
+	 * print "<item>...</item>";
+	 * @endcode
+	 * @param FeedItem $item
 	 */
-	function outItem( $item ) {
-		# print "<item>...</item>";
-	}
+	abstract public function outItem( $item );
 
 	/**
 	 * Generate Footer of the feed
+	 * @par Example:
+	 * @code
+	 * print "</feed>";
+	 * @endcode
 	 */
-	function outFooter() {
-		# print "</feed>";
-	}
-	/**#@-*/
+	abstract public function outFooter();
 
 	/**
 	 * Setup and send HTTP headers. Don't send any content;
@@ -241,42 +286,50 @@ class ChannelFeed extends FeedItem {
 	 * but can also be called separately.
 	 */
 	public function httpHeaders() {
-		global $wgOut;
+		global $wgOut, $wgVaryOnXFP;
 
 		# We take over from $wgOut, excepting its cache header info
 		$wgOut->disable();
 		$mimetype = $this->contentType();
 		header( "Content-type: $mimetype; charset=UTF-8" );
-		$wgOut->sendCacheControl();
 
+		// Set a sane filename
+		$exts = MediaWiki\MediaWikiServices::getInstance()->getMimeAnalyzer()
+			->getExtensionsForType( $mimetype );
+		$ext = $exts ? strtok( $exts, ' ' ) : 'xml';
+		header( "Content-Disposition: inline; filename=\"feed.{$ext}\"" );
+
+		if ( $wgVaryOnXFP ) {
+			$wgOut->addVaryHeader( 'X-Forwarded-Proto' );
+		}
+		$wgOut->sendCacheControl();
 	}
 
 	/**
 	 * Return an internet media type to be sent in the headers.
 	 *
 	 * @return string
-	 * @private
 	 */
-	function contentType() {
+	private function contentType() {
 		global $wgRequest;
-		$ctype = $wgRequest->getVal('ctype','application/xml');
-		$allowedctypes = array('application/xml','text/xml','application/rss+xml','application/atom+xml');
-		return (in_array($ctype, $allowedctypes) ? $ctype : 'application/xml');
+
+		$ctype = $wgRequest->getVal( 'ctype', 'application/xml' );
+		$allowedctypes = [
+			'application/xml',
+			'text/xml',
+			'application/rss+xml',
+			'application/atom+xml'
+		];
+
+		return ( in_array( $ctype, $allowedctypes ) ? $ctype : 'application/xml' );
 	}
 
 	/**
-	 * Output the initial XML headers with a stylesheet for legibility
-	 * if someone finds it in a browser.
-	 * @private
+	 * Output the initial XML headers.
 	 */
-	function outXmlHeader() {
-		global $wgStylePath, $wgStyleVersion;
-
+	protected function outXmlHeader() {
 		$this->httpHeaders();
 		echo '<?xml version="1.0"?>' . "\n";
-		echo '<?xml-stylesheet type="text/css" href="' .
-			htmlspecialchars( wfExpandUrl( "$wgStylePath/common/feed.css?$wgStyleVersion" ) ) .
-			'"?' . ">\n";
 	}
 }
 
@@ -288,57 +341,66 @@ class ChannelFeed extends FeedItem {
 class RSSFeed extends ChannelFeed {
 
 	/**
-	 * Format a date given a timestamp
+	 * Format a date given a timestamp. If a timestamp is not given, nothing is returned
 	 *
-	 * @param $ts Integer: timestamp
-	 * @return String: date string
+	 * @param int|null $ts Timestamp
+	 * @return string|null Date string
 	 */
 	function formatTime( $ts ) {
-		return gmdate( 'D, d M Y H:i:s \G\M\T', wfTimestamp( TS_UNIX, $ts ) );
+		if ( $ts ) {
+			return gmdate( 'D, d M Y H:i:s \G\M\T', wfTimestamp( TS_UNIX, $ts ) );
+		}
 	}
 
 	/**
-	 * Ouput an RSS 2.0 header
+	 * Output an RSS 2.0 header
 	 */
 	function outHeader() {
+		global $wgVersion;
 
 		$this->outXmlHeader();
-		?><rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
-	<channel>
-		<title><?php print $this->getTitle() ?></title>
-		<link><?php print $this->getUrl() ?></link>
-		<description><?php print $this->getDescription() ?></description>
-		<language><?php print $this->getLanguage() ?></language>
-		<generator>MediaWiki <?php print MW_VERSION ?></generator>
-		<lastBuildDate><?php print $this->formatTime( wfTimestampNow() ) ?></lastBuildDate>
-<?php
+		// Manually escaping rather than letting Mustache do it because Mustache
+		// uses htmlentities, which does not work with XML
+		$templateParams = [
+			'title' => $this->getTitle(),
+			'url' => $this->xmlEncode( wfExpandUrl( $this->getUrlUnescaped(), PROTO_CURRENT ) ),
+			'description' => $this->getDescription(),
+			'language' => $this->xmlEncode( $this->getLanguage() ),
+			'version' => $this->xmlEncode( $wgVersion ),
+			'timestamp' => $this->xmlEncode( $this->formatTime( wfTimestampNow() ) )
+		];
+		print $this->templateParser->processTemplate( 'RSSHeader', $templateParams );
 	}
 
 	/**
 	 * Output an RSS 2.0 item
-	 * @param $item FeedItem: item to be output
+	 * @param FeedItem $item Item to be output
 	 */
 	function outItem( $item ) {
-	?>
-		<item>
-			<title><?php print $item->getTitle() ?></title>
-			<link><?php print $item->getUrl() ?></link>
-			<guid<?php if( !$item->RSSIsPermalink ) print ' isPermaLink="false"' ?>><?php print $item->getUniqueId() ?></guid>
-			<description><?php print $item->getDescription() ?></description>
-			<?php if( $item->getDate() ) { ?><pubDate><?php print $this->formatTime( $item->getDate() ) ?></pubDate><?php } ?>
-			<?php if( $item->getAuthor() ) { ?><dc:creator><?php print $item->getAuthor() ?></dc:creator><?php }?>
-			<?php if( $item->getComments() ) { ?><comments><?php print $item->getComments() ?></comments><?php }?>
-		</item>
-<?php
+		// Manually escaping rather than letting Mustache do it because Mustache
+		// uses htmlentities, which does not work with XML
+		$templateParams = [
+			"title" => $item->getTitle(),
+			"url" => $this->xmlEncode( wfExpandUrl( $item->getUrlUnescaped(), PROTO_CURRENT ) ),
+			"permalink" => $item->rssIsPermalink,
+			"uniqueID" => $item->getUniqueID(),
+			"description" => $item->getDescription(),
+			"date" => $this->xmlEncode( $this->formatTime( $item->getDate() ) ),
+			"author" => $item->getAuthor()
+		];
+		$comments = $item->getCommentsUnescaped();
+		if ( $comments ) {
+			$commentsEscaped = $this->xmlEncode( wfExpandUrl( $comments, PROTO_CURRENT ) );
+			$templateParams["comments"] = $commentsEscaped;
+		}
+		print $this->templateParser->processTemplate( 'RSSItem', $templateParams );
 	}
 
 	/**
-	 * Ouput an RSS 2.0 footer
+	 * Output an RSS 2.0 footer
 	 */
 	function outFooter() {
-	?>
-	</channel>
-</rss><?php
+		print "</channel></rss>";
 	}
 }
 
@@ -349,81 +411,84 @@ class RSSFeed extends ChannelFeed {
  */
 class AtomFeed extends ChannelFeed {
 	/**
-	 * @todo document
+	 * Format a date given timestamp, if one is given.
+	 *
+	 * @param string|int|null $timestamp
+	 * @return string|null
 	 */
-	function formatTime( $ts ) {
-		// need to use RFC 822 time format at least for rss2.0
-		return gmdate( 'Y-m-d\TH:i:s', wfTimestamp( TS_UNIX, $ts ) );
+	function formatTime( $timestamp ) {
+		if ( $timestamp ) {
+			// need to use RFC 822 time format at least for rss2.0
+			return gmdate( 'Y-m-d\TH:i:s', wfTimestamp( TS_UNIX, $timestamp ) );
+		}
 	}
 
 	/**
 	 * Outputs a basic header for Atom 1.0 feeds.
 	 */
 	function outHeader() {
+		global $wgVersion;
 		$this->outXmlHeader();
-		?><feed xmlns="http://www.w3.org/2005/Atom" xml:lang="<?php print $this->getLanguage() ?>">
-		<id><?php print $this->getFeedId() ?></id>
-		<title><?php print $this->getTitle() ?></title>
-		<link rel="self" type="application/atom+xml" href="<?php print $this->getSelfUrl() ?>"/>
-		<link rel="alternate" type="text/html" href="<?php print $this->getUrl() ?>"/>
-		<updated><?php print $this->formatTime( wfTimestampNow() ) ?>Z</updated>
-		<subtitle><?php print $this->getDescription() ?></subtitle>
-		<generator>MediaWiki <?php print MW_VERSION ?></generator>
-
-<?php
+		// Manually escaping rather than letting Mustache do it because Mustache
+		// uses htmlentities, which does not work with XML
+		$templateParams = [
+			'language' => $this->xmlEncode( $this->getLanguage() ),
+			'feedID' => $this->getFeedId(),
+			'title' => $this->getTitle(),
+			'url' => $this->xmlEncode( wfExpandUrl( $this->getUrlUnescaped(), PROTO_CURRENT ) ),
+			'selfUrl' => $this->getSelfUrl(),
+			'timestamp' => $this->xmlEncode( $this->formatTime( wfTimestampNow() ) ),
+			'description' => $this->getDescription(),
+			'version' => $this->xmlEncode( $wgVersion ),
+		];
+		print $this->templateParser->processTemplate( 'AtomHeader', $templateParams );
 	}
 
 	/**
-	 * Atom 1.0 requires a unique, opaque IRI as a unique indentifier
+	 * Atom 1.0 requires a unique, opaque IRI as a unique identifier
 	 * for every feed we create. For now just use the URL, but who
 	 * can tell if that's right? If we put options on the feed, do we
 	 * have to change the id? Maybe? Maybe not.
 	 *
 	 * @return string
-	 * @private
 	 */
-	function getFeedId() {
+	private function getFeedId() {
 		return $this->getSelfUrl();
 	}
 
 	/**
 	 * Atom 1.0 requests a self-reference to the feed.
 	 * @return string
-	 * @private
 	 */
-	function getSelfUrl() {
+	private function getSelfUrl() {
 		global $wgRequest;
 		return htmlspecialchars( $wgRequest->getFullRequestURL() );
 	}
 
 	/**
 	 * Output a given item.
-	 * @param $item
+	 * @param FeedItem $item
 	 */
 	function outItem( $item ) {
 		global $wgMimeType;
-	?>
-	<entry>
-		<id><?php print $item->getUniqueId() ?></id>
-		<title><?php print $item->getTitle() ?></title>
-		<link rel="alternate" type="<?php print $wgMimeType ?>" href="<?php print $item->getUrl() ?>"/>
-		<?php if( $item->getDate() ) { ?>
-		<updated><?php print $this->formatTime( $item->getDate() ) ?>Z</updated>
-		<?php } ?>
-
-		<summary type="html"><?php print $item->getDescription() ?></summary>
-		<?php if( $item->getAuthor() ) { ?><author><name><?php print $item->getAuthor() ?></name></author><?php }?>
-	</entry>
-
-<?php /* FIXME need to add comments
-	<?php if( $item->getComments() ) { ?><dc:comment><?php print $item->getComments() ?></dc:comment><?php }?>
-	  */
+		// Manually escaping rather than letting Mustache do it because Mustache
+		// uses htmlentities, which does not work with XML
+		$templateParams = [
+			"uniqueID" => $item->getUniqueID(),
+			"title" => $item->getTitle(),
+			"mimeType" => $this->xmlEncode( $wgMimeType ),
+			"url" => $this->xmlEncode( wfExpandUrl( $item->getUrlUnescaped(), PROTO_CURRENT ) ),
+			"date" => $this->xmlEncode( $this->formatTime( $item->getDate() ) ),
+			"description" => $item->getDescription(),
+			"author" => $item->getAuthor()
+		];
+		print $this->templateParser->processTemplate( 'AtomItem', $templateParams );
 	}
 
 	/**
-	 * Outputs the footer for Atom 1.0 feed (basicly '\</feed\>').
+	 * Outputs the footer for Atom 1.0 feed (basically '\</feed\>').
 	 */
-	function outFooter() {?>
-	</feed><?php
+	function outFooter() {
+		print "</feed>";
 	}
 }

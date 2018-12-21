@@ -29,43 +29,103 @@
  * @ingroup SpecialPage
  */
 class WantedCategoriesPage extends WantedQueryPage {
+	private $currentCategoryCounts;
 
 	function __construct( $name = 'Wantedcategories' ) {
 		parent::__construct( $name );
 	}
 
 	function getQueryInfo() {
-		return array (
-			'tables' => array ( 'categorylinks', 'page' ),
-			'fields' => array ( "'" . NS_CATEGORY . "' AS namespace",
-					'cl_to AS title',
-					'COUNT(*) AS value' ),
-			'conds' => array ( 'page_title IS NULL' ),
-			'options' => array ( 'GROUP BY' => 'cl_to' ),
-			'join_conds' => array ( 'page' => array ( 'LEFT JOIN',
-				array ( 'page_title = cl_to',
-					'page_namespace' => NS_CATEGORY ) ) )
-		);
+		return [
+			'tables' => [ 'categorylinks', 'page' ],
+			'fields' => [
+				'namespace' => NS_CATEGORY,
+				'title' => 'cl_to',
+				'value' => 'COUNT(*)'
+			],
+			'conds' => [ 'page_title IS NULL' ],
+			'options' => [ 'GROUP BY' => 'cl_to' ],
+			'join_conds' => [ 'page' => [ 'LEFT JOIN',
+				[ 'page_title = cl_to',
+					'page_namespace' => NS_CATEGORY ] ] ]
+		];
 	}
 
+	function preprocessResults( $db, $res ) {
+		parent::preprocessResults( $db, $res );
+
+		$this->currentCategoryCounts = [];
+
+		if ( !$res->numRows() || !$this->isCached() ) {
+			return;
+		}
+
+		// Fetch (hopefully) up-to-date numbers of pages in each category.
+		// This should be fast enough as we limit the list to a reasonable length.
+
+		$allCategories = [];
+		foreach ( $res as $row ) {
+			$allCategories[] = $row->title;
+		}
+
+		$categoryRes = $db->select(
+			'category',
+			[ 'cat_title', 'cat_pages' ],
+			[ 'cat_title' => $allCategories ],
+			__METHOD__
+		);
+		foreach ( $categoryRes as $row ) {
+			$this->currentCategoryCounts[$row->cat_title] = intval( $row->cat_pages );
+		}
+
+		// Back to start for display
+		$res->seek( 0 );
+	}
+
+	/**
+	 * @param Skin $skin
+	 * @param object $result Result row
+	 * @return string
+	 */
 	function formatResult( $skin, $result ) {
-		global $wgLang, $wgContLang;
+		global $wgContLang;
 
 		$nt = Title::makeTitle( $result->namespace, $result->title );
-		$text = htmlspecialchars( $wgContLang->convert( $nt->getText() ) );
+		$text = $wgContLang->convert( $nt->getText() );
 
-		$plink = $this->isCached() ?
-			$skin->link( $nt, $text ) :
-			$skin->link(
+		if ( !$this->isCached() ) {
+			// We can assume the freshest data
+			$plink = $this->getLinkRenderer()->makeBrokenLink(
 				$nt,
-				$text,
-				array(),
-				array(),
-				array( 'broken' )
+				$text
 			);
+			$nlinks = $this->msg( 'nmembers' )->numParams( $result->value )->escaped();
+		} else {
+			$plink = $this->getLinkRenderer()->makeLink( $nt, $text );
 
-		$nlinks = wfMsgExt( 'nmembers', array( 'parsemag', 'escape'),
-			$wgLang->formatNum( $result->value ) );
-		return wfSpecialList($plink, $nlinks);
+			$currentValue = isset( $this->currentCategoryCounts[$result->title] )
+				? $this->currentCategoryCounts[$result->title]
+				: 0;
+			$cachedValue = intval( $result->value ); // T76910
+
+			// If the category has been created or emptied since the list was refreshed, strike it
+			if ( $nt->isKnown() || $currentValue === 0 ) {
+				$plink = "<del>$plink</del>";
+			}
+
+			// Show the current number of category entries if it changed
+			if ( $currentValue !== $cachedValue ) {
+				$nlinks = $this->msg( 'nmemberschanged' )
+					->numParams( $cachedValue, $currentValue )->escaped();
+			} else {
+				$nlinks = $this->msg( 'nmembers' )->numParams( $cachedValue )->escaped();
+			}
+		}
+
+		return $this->getLanguage()->specialList( $plink, $nlinks );
+	}
+
+	protected function getGroupName() {
+		return 'maintenance';
 	}
 }

@@ -1,56 +1,14 @@
 <?php
-if ( ! defined( 'MEDIAWIKI' ) )
-	die();
-/**#@+
- * A parser extension that adds two tags, <ref> and <references> for adding
- * citations to pages
- *
- * @addtogroup Extensions
- *
- * @link http://www.mediawiki.org/wiki/Extension:Cite/Cite.php Documentation
- *
- * @bug 4579
- *
- * @author Ævar Arnfjörð Bjarmason <avarab@gmail.com>
- * @copyright Copyright © 2005, Ævar Arnfjörð Bjarmason
- * @license http://www.gnu.org/copyleft/gpl.html GNU General Public License 2.0 or later
- */
 
-if ( defined( 'MW_SUPPORTS_PARSERFIRSTCALLINIT' ) ) {
-	$wgHooks['ParserFirstCallInit'][] = 'wfCite';
-} else {
-	$wgExtensionFunctions[] = 'wfCite';
-}
-
-$wgExtensionCredits['parserhook'][] = array(
-	'path' => __FILE__,
-	'name' => 'Cite',
-	'author' => 'Ævar Arnfjörð Bjarmason',
-	'description' => 'Adds <nowiki><ref[ name=id]></nowiki> and <nowiki><references/></nowiki> tags, for citations', // kept for b/c
-	'descriptionmsg' => 'cite_desc',
-	'url' => 'http://www.mediawiki.org/wiki/Extension:Cite/Cite.php'
-);
-$wgParserTestFiles[] = dirname( __FILE__ ) . "/citeParserTests.txt";
-$wgExtensionMessagesFiles['Cite'] = dirname( __FILE__ ) . "/Cite.i18n.php";
-$wgAutoloadClasses['Cite'] = dirname( __FILE__ ) . "/Cite_body.php";
-$wgSpecialPageGroups['Cite'] = 'pagetools';
-
-define( 'CITE_DEFAULT_GROUP', '');
-/**
- * The emergency shut-off switch.  Override in local settings to disable
- * groups; or remove all references from this file to enable unconditionally
- */
-$wgAllowCiteGroups = true; 
-
-/**
- * An emergency optimisation measure for caching cite <references /> output.
- */
-$wgCiteCacheReferences = false;
-
-function wfCite() {
-	new Cite;
+if ( function_exists( 'wfLoadExtension' ) ) {
+	wfLoadExtension( 'Cite' );
+	// Keep i18n globals so mergeMessageFileList.php doesn't break
+	$wgMessagesDirs['Cite'] = __DIR__ . '/i18n';
+	/* wfWarn(
+		'Deprecated PHP entry point used for Cite extension. Please use wfLoadExtension instead, ' .
+		'see https://www.mediawiki.org/wiki/Extension_registration for more details.'
+	); */
 	return true;
+} else {
+	die( 'This version of the Cite extension requires MediaWiki 1.25+' );
 }
-
-/**#@-*/
-

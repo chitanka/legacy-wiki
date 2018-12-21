@@ -32,24 +32,30 @@
  * @ingroup SpecialPage
  */
 class WantedTemplatesPage extends WantedQueryPage {
-
 	function __construct( $name = 'Wantedtemplates' ) {
 		parent::__construct( $name );
 	}
 
 	function getQueryInfo() {
-		return array (
-			'tables' => array ( 'templatelinks', 'page' ),
-			'fields' => array ( 'tl_namespace AS namespace',
-					'tl_title AS title',
-					'COUNT(*) AS value' ),
-			'conds' => array ( 'page_title IS NULL',
-					'tl_namespace' => NS_TEMPLATE ),
-			'options' => array (
-				'GROUP BY' => 'tl_namespace, tl_title' ),
-			'join_conds' => array ( 'page' => array ( 'LEFT JOIN',
-					array ( 'page_namespace = tl_namespace',
-						'page_title = tl_title' ) ) )
-		);
+		return [
+			'tables' => [ 'templatelinks', 'page' ],
+			'fields' => [
+				'namespace' => 'tl_namespace',
+				'title' => 'tl_title',
+				'value' => 'COUNT(*)'
+			],
+			'conds' => [
+				'page_title IS NULL',
+				'tl_namespace' => NS_TEMPLATE
+			],
+			'options' => [ 'GROUP BY' => [ 'tl_namespace', 'tl_title' ] ],
+			'join_conds' => [ 'page' => [ 'LEFT JOIN',
+				[ 'page_namespace = tl_namespace',
+					'page_title = tl_title' ] ] ]
+		];
+	}
+
+	protected function getGroupName() {
+		return 'maintenance';
 	}
 }

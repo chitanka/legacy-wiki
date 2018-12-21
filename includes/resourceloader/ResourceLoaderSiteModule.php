@@ -1,5 +1,7 @@
 <?php
 /**
+ * ResourceLoader module for site customizations.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -25,39 +27,26 @@
  */
 class ResourceLoaderSiteModule extends ResourceLoaderWikiModule {
 
-	/* Protected Methods */
-
 	/**
-	 * Gets list of pages used by this module
-	 * 
-	 * @return Array: List of pages
+	 * Get list of pages used by this module
+	 *
+	 * @param ResourceLoaderContext $context
+	 * @return array List of pages
 	 */
 	protected function getPages( ResourceLoaderContext $context ) {
-		global $wgHandheldStyle;
-
-		$pages = array(
-			'MediaWiki:Common.js' => array( 'type' => 'script' ),
-			'MediaWiki:Common.css' => array( 'type' => 'style' ),
-			'MediaWiki:' . ucfirst( $context->getSkin() ) . '.js' => array( 'type' => 'script' ),
-			'MediaWiki:' . ucfirst( $context->getSkin() ) . '.css' => array( 'type' => 'style' ),
-			'MediaWiki:Print.css' => array( 'type' => 'style', 'media' => 'print' ),
-		);
-		if ( $wgHandheldStyle ) {
-			$pages['MediaWiki:Handheld.css'] = array( 
-				'type' => 'style', 
-				'media' => 'handheld' );
+		$pages = [];
+		if ( $this->getConfig()->get( 'UseSiteJs' ) ) {
+			$pages['MediaWiki:Common.js'] = [ 'type' => 'script' ];
+			$pages['MediaWiki:' . ucfirst( $context->getSkin() ) . '.js'] = [ 'type' => 'script' ];
 		}
 		return $pages;
 	}
 
-	/* Methods */
-
 	/**
-	 * Gets group name
-	 * 
-	 * @return String: Name of group
+	 * @param ResourceLoaderContext|null $context
+	 * @return array
 	 */
-	public function getGroup() {
-		return 'site';
+	public function getDependencies( ResourceLoaderContext $context = null ) {
+		return [ 'site.styles' ];
 	}
 }

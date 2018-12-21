@@ -21,31 +21,67 @@
  */
 
 /**
- * Module for user customizations
+ * Module for user customizations scripts
  */
 class ResourceLoaderUserModule extends ResourceLoaderWikiModule {
 
-	/* Protected Methods */
 	protected $origin = self::ORIGIN_USER_INDIVIDUAL;
+	protected $targets = [ 'desktop', 'mobile' ];
 
+	/**
+	 * @param ResourceLoaderContext $context
+	 * @return array List of pages
+	 */
 	protected function getPages( ResourceLoaderContext $context ) {
-		if ( $context->getUser() ) {
-			$username = $context->getUser();
-			return array(
-				"User:$username/common.js" => array( 'type' => 'script' ),
-				"User:$username/" . $context->getSkin() . '.js' => 
-					array( 'type' => 'script' ),
-				"User:$username/common.css" => array( 'type' => 'style' ),
-				"User:$username/" . $context->getSkin() . '.css' => 
-					array( 'type' => 'style' ),
-			);
+		$config = $this->getConfig();
+		$user = $context->getUserObj();
+		if ( $user->isAnon() ) {
+			return [];
 		}
-		return array();
+
+		// Use localised/normalised variant to ensure $excludepage matches
+		$userPage = $user->getUserPage()->getPrefixedDBkey();
+		$pages = [];
+
+		if ( $config->get( 'AllowUserJs' ) ) {
+			$pages["$userPage/common.js"] = [ 'type' => 'script' ];
+			$pages["$userPage/" . $context->getSkin() . '.js'] = [ 'type' => 'script' ];
+		}
+
+		// User group pages are maintained site-wide and enabled with site JS/CSS.
+		if ( $config->get( 'UseSiteJs' ) ) {
+			foreach ( $user->getEffectiveGroups() as $group ) {
+				if ( $group == '*' ) {
+					continue;
+				}
+				$pages["MediaWiki:Group-$group.js"] = [ 'type' => 'script' ];
+			}
+		}
+
+		// Hack for T28283: Allow excluding pages for preview on a CSS/JS page.
+		// The excludepage parameter is set by OutputPage.
+		$excludepage = $context->getRequest()->getVal( 'excludepage' );
+		if ( isset( $pages[$excludepage] ) ) {
+			unset( $pages[$excludepage] );
+		}
+
+		return $pages;
 	}
-	
-	/* Methods */
-	
+
+	/**
+	 * Get group name
+	 *
+	 * @return string
+	 */
 	public function getGroup() {
 		return 'user';
+	}
+
+	/**
+	 * @param ResourceLoaderContext|null $context
+	 * @return array
+	 */
+	public function getDependencies( ResourceLoaderContext $context = null ) {
+		return [ 'user.styles' ];
 	}
 }

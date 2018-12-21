@@ -1,5 +1,7 @@
 <?php
 /**
+ * Test revision text compression and decompression.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -16,22 +18,23 @@
  * http://www.gnu.org/copyleft/gpl.html
  *
  * @file
- * @ingroup Maintenance
- * @see wfWaitForSlaves()
+ * @ingroup Maintenance ExternalStorage
  */
 
-$optionsWithArgs = array( 'start', 'limit', 'type' );
-require( dirname( __FILE__ ) . '/../commandLine.inc' );
+$optionsWithArgs = [ 'start', 'limit', 'type' ];
+require __DIR__ . '/../commandLine.inc';
 
-if ( !isset( $args[0] )  ) {
-	echo "Usage: php testCompression.php [--type=<type>] [--start=<start-date>] [--limit=<num-revs>] <page-title>\n";
+if ( !isset( $args[0] ) ) {
+	echo "Usage: php testCompression.php [--type=<type>] [--start=<start-date>] " .
+		"[--limit=<num-revs>] <page-title>\n";
 	exit( 1 );
 }
 
+$lang = Language::factory( 'en' );
 $title = Title::newFromText( $args[0] );
 if ( isset( $options['start'] ) ) {
 	$start = wfTimestamp( TS_MW, strtotime( $options['start'] ) );
-	echo "Starting from " . $wgLang->timeanddate( $start ) . "\n";
+	echo "Starting from " . $lang->timeanddate( $start ) . "\n";
 } else {
 	$start = '19700101000000';
 }
@@ -42,30 +45,31 @@ if ( isset( $options['limit'] ) ) {
 	$limit = 1000;
 	$untilHappy = true;
 }
-$type = isset( $options['type'] ) ? $options['type'] : 'ConcatenatedGzipHistoryBlob';
+$type = isset( $options['type'] ) ? $options['type'] : ConcatenatedGzipHistoryBlob::class;
 
-
-$dbr = wfGetDB( DB_SLAVE );
+$dbr = $this->getDB( DB_REPLICA );
+$revQuery = Revision::getQueryInfo( [ 'page', 'text' ] );
 $res = $dbr->select(
-	array( 'page', 'revision', 'text' ),
-	'*',
-	array(
+	$revQuery['tables'],
+	$revQuery['fields'],
+	[
 		'page_namespace' => $title->getNamespace(),
 		'page_title' => $title->getDBkey(),
-		'page_id=rev_page',
 		'rev_timestamp > ' . $dbr->addQuotes( $dbr->timestamp( $start ) ),
-		'rev_text_id=old_id'
-	), __FILE__, array( 'LIMIT' => $limit )
+	],
+	__FILE__,
+	[ 'LIMIT' => $limit ],
+	$revQuery['joins']
 );
 
 $blob = new $type;
-$hashes = array();
-$keys = array();
+$hashes = [];
+$keys = [];
 $uncompressedSize = 0;
 $t = -microtime( true );
 foreach ( $res as $row ) {
 	$revision = new Revision( $row );
-	$text = $revision->getText();
+	$text = $revision->getSerializedData();
 	$uncompressedSize += strlen( $text );
 	$hashes[$row->rev_id] = md5( $text );
 	$keys[$row->rev_id] = $blob->addItem( $text );
@@ -82,7 +86,7 @@ printf( "%s\nCompression ratio for %d revisions: %5.2f, %s -> %d\n",
 	$type,
 	count( $hashes ),
 	$uncompressedSize / strlen( $serialized ),
-	$wgLang->formatSize( $uncompressedSize ),
+	$lang->formatSize( $uncompressedSize ),
 	strlen( $serialized )
 );
 printf( "Compression time: %5.2f ms\n", $t * 1000 );
@@ -98,4 +102,3 @@ foreach ( $keys as $id => $key ) {
 }
 $t += microtime( true );
 printf( "Decompression time: %5.2f ms\n", $t * 1000 );
-

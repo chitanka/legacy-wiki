@@ -1,6 +1,7 @@
 <?php
 /**
- * @file
+ * Default values for MediaWiki configuration settings.
+ *
  *
  *                 NEVER EDIT THIS FILE
  *
@@ -8,84 +9,116 @@
  * To customize your installation, edit "LocalSettings.php". If you make
  * changes here, they will be lost on next upgrade of MediaWiki!
  *
- * Note that since all these string interpolations are expanded
- * before LocalSettings is included, if you localize something
- * like $wgScriptPath, you must also localize everything that
- * depends on it.
+ * In this file, variables whose default values depend on other
+ * variables are set to false. The actual default value of these variables
+ * will only be set in Setup.php, taking into account any custom settings
+ * performed in LocalSettings.php.
  *
  * Documentation is in the source and on:
- * http://www.mediawiki.org/wiki/Manual:Configuration_settings
+ * https://www.mediawiki.org/wiki/Manual:Configuration_settings
+ *
+ * @warning  Note: this (and other things) will break if the autoloader is not
+ * enabled. Please include includes/AutoLoader.php before including this file.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * http://www.gnu.org/copyleft/gpl.html
+ *
+ * @file
  */
 
 /**
  * @cond file_level_code
- * This is not a valid entry point, perform no further processing unless MEDIAWIKI is defined
+ * This is not a valid entry point, perform no further processing unless
+ * MEDIAWIKI is defined
  */
-if( !defined( 'MEDIAWIKI' ) ) {
+if ( !defined( 'MEDIAWIKI' ) ) {
 	echo "This file is part of MediaWiki and is not a valid entry point\n";
 	die( 1 );
 }
 
-# Create a site configuration object. Not used for much in a default install
-if ( !defined( 'MW_COMPILED' ) ) {
-	require_once( "$IP/includes/SiteConfiguration.php" );
-}
-$wgConf = new SiteConfiguration;
 /** @endcond */
 
 /**
- * MediaWiki version number
- * @deprecated use the constant MW_VERSION instead
+ * wgConf hold the site configuration.
+ * Not used for much in a default install.
+ * @since 1.5
  */
-$wgVersion = MW_VERSION;
-
-/** Name of the site. It must be changed in LocalSettings.php */
-$wgSitename         = 'MediaWiki';
+$wgConf = new SiteConfiguration;
 
 /**
- * URL of the server. It will be automatically built including https mode.
+ * Registry of factory functions to create config objects:
+ * The 'main' key must be set, and the value should be a valid
+ * callable.
+ * @since 1.23
+ */
+$wgConfigRegistry = [
+	'main' => 'GlobalVarConfig::newInstance'
+];
+
+/**
+ * MediaWiki version number
+ * @since 1.2
+ */
+$wgVersion = '1.31.1';
+
+/**
+ * Name of the site. It must be changed in LocalSettings.php
+ */
+$wgSitename = 'MediaWiki';
+
+/**
+ * When the wiki is running behind a proxy and this is set to true, assumes that the proxy exposes
+ * the wiki on the standard ports (443 for https and 80 for http).
+ * @var bool
+ * @since 1.26
+ */
+$wgAssumeProxiesUseDefaultProtocolPorts = true;
+
+/**
+ * URL of the server.
  *
- * Example:
- * <code>
- * $wgServer = http://example.com
- * </code>
+ * @par Example:
+ * @code
+ * $wgServer = 'http://example.com';
+ * @endcode
  *
  * This is usually detected correctly by MediaWiki. If MediaWiki detects the
  * wrong server, it will redirect incorrectly after you save a page. In that
  * case, set this variable to fix it.
+ *
+ * If you want to use protocol-relative URLs on your wiki, set this to a
+ * protocol-relative URL like '//example.com' and set $wgCanonicalServer
+ * to a fully qualified URL.
  */
-$wgServer = '';
+$wgServer = WebRequest::detectServer();
 
-/** @cond file_level_code */
-if( isset( $_SERVER['SERVER_NAME'] )
-	# additionially, for requests made directly to an IPv6 address we have
-	# to make sure the server enclose it in either [] or nothing at all
-	&& (strpos($_SERVER['SERVER_NAME'], '[')
-	    xor strpos( $_SERVER['SERVER_NAME'], ']'))
-	) {
-	$serverName = $_SERVER['SERVER_NAME'];
-} elseif( isset( $_SERVER['HOSTNAME'] ) ) {
-	$serverName = $_SERVER['HOSTNAME'];
-} elseif( isset( $_SERVER['HTTP_HOST'] ) ) {
-	$serverName = $_SERVER['HTTP_HOST'];
-} elseif( isset( $_SERVER['SERVER_ADDR'] ) ) {
-	$serverName = $_SERVER['SERVER_ADDR'];
-} else {
-	$serverName = 'localhost';
-}
+/**
+ * Canonical URL of the server, to use in IRC feeds and notification e-mails.
+ * Must be fully qualified, even if $wgServer is protocol-relative.
+ *
+ * Defaults to $wgServer, expanded to a fully qualified http:// URL if needed.
+ * @since 1.18
+ */
+$wgCanonicalServer = false;
 
-$wgProto = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') ? 'https' : 'http';
-
-$wgServer = $wgProto.'://' . $serverName;
-# If the port is a non-standard one, add it to the URL
-if(    isset( $_SERVER['SERVER_PORT'] )
-	&& !strpos( $serverName, ':' )
-	&& (    ( $wgProto == 'http' && $_SERVER['SERVER_PORT'] != 80 )
-	 || ( $wgProto == 'https' && $_SERVER['SERVER_PORT'] != 443 ) ) ) {
-
-	$wgServer .= ":" . $_SERVER['SERVER_PORT'];
-}
-/** @endcond */
+/**
+ * Server name. This is automatically computed by parsing the bare
+ * hostname out of $wgCanonicalServer. It should not be customized.
+ * @since 1.24
+ */
+$wgServerName = false;
 
 /************************************************************************//**
  * @name   Script path settings
@@ -101,7 +134,7 @@ if(    isset( $_SERVER['SERVER_PORT'] )
  * Other paths will be set to defaults based on it unless they are directly
  * set in LocalSettings.php
  */
-$wgScriptPath	    = '/wiki';
+$wgScriptPath = '/wiki';
 
 /**
  * Whether to support URLs like index.php/Page_title These often break when PHP
@@ -118,42 +151,11 @@ $wgScriptPath	    = '/wiki';
  * The default $wgArticlePath will be set based on this value at runtime, but if
  * you have customized it, having this incorrectly set to true can cause
  * redirect loops when "pretty URLs" are used.
+ * @since 1.2.1
  */
-$wgUsePathInfo =
-	( strpos( php_sapi_name(), 'cgi' ) === false ) &&
-	( strpos( php_sapi_name(), 'apache2filter' ) === false ) &&
-	( strpos( php_sapi_name(), 'isapi' ) === false );
-
-/**
- * The extension to append to script names by default. This can either be .php
- * or .php5.
- *
- * Some hosting providers use PHP 4 for *.php files, and PHP 5 for *.php5. This
- * variable is provided to support those providers.
- */
-$wgScriptExtension  = '.php';
-
-/**
- * The URL path to index.php.
- *
- * Defaults to "{$wgScriptPath}/index{$wgScriptExtension}".
- */
-$wgScript           = false;
-
-/**
- * The URL path to redirect.php. This is a script that is used by the Nostalgia
- * skin.
- *
- * Defaults to "{$wgScriptPath}/redirect{$wgScriptExtension}".
- */
-$wgRedirectScript   = false; ///< defaults to
-
-/**
- * The URL path to load.php.
- *
- * Defaults to "{$wgScriptPath}/load{$wgScriptExtension}".
- */
-$wgLoadScript           = false;
+$wgUsePathInfo = ( strpos( PHP_SAPI, 'cgi' ) === false ) &&
+	( strpos( PHP_SAPI, 'apache2filter' ) === false ) &&
+	( strpos( PHP_SAPI, 'isapi' ) === false );
 
 /**@}*/
 
@@ -162,7 +164,6 @@ $wgLoadScript           = false;
  *
  * These various web and file path variables are set to their defaults
  * in Setup.php if they are not explicitly set from LocalSettings.php.
- * If you do override them, be sure to set them all!
  *
  * These will relatively rarely need to be set manually, unless you are
  * splitting style sheets or images outside the main document root.
@@ -177,96 +178,196 @@ $wgLoadScript           = false;
  */
 
 /**
- * The URL path of the skins directory. Defaults to "{$wgScriptPath}/skins"
+ * The URL path to index.php.
+ *
+ * Defaults to "{$wgScriptPath}/index.php".
  */
-$wgStylePath   = false;
+$wgScript = false;
+
+/**
+ * The URL path to load.php.
+ *
+ * Defaults to "{$wgScriptPath}/load.php".
+ * @since 1.17
+ */
+$wgLoadScript = false;
+
+/**
+ * The URL path of the skins directory.
+ * Defaults to "{$wgResourceBasePath}/skins".
+ * @since 1.3
+ */
+$wgStylePath = false;
 $wgStyleSheetPath = &$wgStylePath;
 
 /**
  * The URL path of the skins directory. Should not point to an external domain.
  * Defaults to "{$wgScriptPath}/skins".
+ * @since 1.17
  */
-$wgLocalStylePath   = false;
+$wgLocalStylePath = false;
 
 /**
  * The URL path of the extensions directory.
- * Defaults to "{$wgScriptPath}/extensions".
+ * Defaults to "{$wgResourceBasePath}/extensions".
  * @since 1.16
  */
 $wgExtensionAssetsPath = false;
 
 /**
- * Filesystem stylesheets directory. Defaults to "{$IP}/skins"
+ * Filesystem extensions directory.
+ * Defaults to "{$IP}/extensions".
+ * @since 1.25
  */
-$wgStyleDirectory = false;
+$wgExtensionDirectory = "{$IP}/extensions";
+
+/**
+ * Filesystem stylesheets directory.
+ * Defaults to "{$IP}/skins".
+ * @since 1.3
+ */
+$wgStyleDirectory = "{$IP}/skins";
 
 /**
  * The URL path for primary article page views. This path should contain $1,
  * which is replaced by the article title.
  *
- * Defaults to "{$wgScript}/$1" or "{$wgScript}?title=$1", depending on
- * $wgUsePathInfo.
+ * Defaults to "{$wgScript}/$1" or "{$wgScript}?title=$1",
+ * depending on $wgUsePathInfo.
  */
-$wgArticlePath      = false;
+$wgArticlePath = false;
 
 /**
- * The URL path for the images directory. Defaults to "{$wgScriptPath}/images"
+ * The URL path for the images directory.
+ * Defaults to "{$wgScriptPath}/images".
  */
-$wgUploadPath       = false;
+$wgUploadPath = false;
 
 /**
  * The filesystem path of the images directory. Defaults to "{$IP}/images".
  */
-$wgUploadDirectory	= false;
+$wgUploadDirectory = false;
+
+/**
+ * Directory where the cached page will be saved.
+ * Defaults to "{$wgUploadDirectory}/cache".
+ */
+$wgFileCacheDirectory = false;
 
 /**
  * The URL path of the wiki logo. The logo size should be 135x135 pixels.
- * Defaults to "{$wgStylePath}/common/images/wiki.png".
+ * Defaults to "$wgResourceBasePath/resources/assets/wiki.png".
  */
-$wgLogo				= false;
+$wgLogo = false;
+
+/**
+ * Array with URL paths to HD versions of the wiki logo. The scaled logo size
+ * should be under 135x155 pixels.
+ * Only 1.5x and 2x versions are supported.
+ *
+ * @par Example:
+ * @code
+ * $wgLogoHD = [
+ *	"1.5x" => "path/to/1.5x_version.png",
+ *	"2x" => "path/to/2x_version.png"
+ * ];
+ * @endcode
+ *
+ * SVG is also supported but when enabled, it
+ * disables 1.5x and 2x as svg will already
+ * be optimised for screen resolution.
+ *
+ * @par Example:
+ * @code
+ * $wgLogoHD = [
+ *	"svg" => "path/to/svg_version.svg",
+ * ];
+ * @endcode
+ *
+ * @since 1.25
+ */
+$wgLogoHD = false;
 
 /**
  * The URL path of the shortcut icon.
+ * @since 1.6
  */
-$wgFavicon			= '/favicon.ico';
+$wgFavicon = '/favicon.ico';
 
 /**
  * The URL path of the icon for iPhone and iPod Touch web app bookmarks.
  * Defaults to no icon.
+ * @since 1.12
  */
-$wgAppleTouchIcon   = false;
+$wgAppleTouchIcon = false;
+
+/**
+ * Value for the referrer policy meta tag.
+ * One or more of the values defined in the Referrer Policy specification:
+ * https://w3c.github.io/webappsec-referrer-policy/
+ * ('no-referrer', 'no-referrer-when-downgrade', 'same-origin',
+ * 'origin', 'strict-origin', 'origin-when-cross-origin',
+ * 'strict-origin-when-cross-origin', or 'unsafe-url')
+ * Setting it to false prevents the meta tag from being output
+ * (which results in falling back to the Referrer-Policy header,
+ * or 'no-referrer-when-downgrade' if that's not set either.)
+ * Setting it to an array (supported since 1.31) will create a meta tag for
+ * each value, in the reverse of the order (meaning that the first array element
+ * will be the default and the others used as fallbacks for browsers which do not
+ * understand it).
+ *
+ * @var array|string|bool
+ * @since 1.25
+ */
+$wgReferrerPolicy = false;
 
 /**
  * The local filesystem path to a temporary directory. This is not required to
  * be web accessible.
  *
- * Defaults to "{$wgUploadDirectory}/tmp".
+ * When this setting is set to false, its value will be set through a call
+ * to wfTempDir(). See that methods implementation for the actual detection
+ * logic.
+ *
+ * Developers should use the global function wfTempDir() instead of this
+ * variable.
+ *
+ * @see wfTempDir()
+ * @note Default changed to false in MediaWiki 1.20.
  */
-$wgTmpDirectory     = false;
+$wgTmpDirectory = false;
 
 /**
  * If set, this URL is added to the start of $wgUploadPath to form a complete
  * upload URL.
+ * @since 1.4
  */
-$wgUploadBaseUrl    = "";
+$wgUploadBaseUrl = '';
 
 /**
  * To enable remote on-demand scaling, set this to the thumbnail base URL.
  * Full thumbnail URL will be like $wgUploadStashScalerBaseUrl/e/e6/Foo.jpg/123px-Foo.jpg
  * where 'e6' are the first two characters of the MD5 hash of the file name.
  * If $wgUploadStashScalerBaseUrl is set to false, thumbs are rendered locally as needed.
+ * @since 1.17
  */
 $wgUploadStashScalerBaseUrl = false;
 
 /**
  * To set 'pretty' URL paths for actions other than
- * plain page views, add to this array. For instance:
- *   'edit' => "$wgScriptPath/edit/$1"
+ * plain page views, add to this array.
  *
- * There must be an appropriate script or rewrite rule
- * in place to handle these URLs.
+ * @par Example:
+ * Set pretty URL for the edit action:
+ * @code
+ *   'edit' => "$wgScriptPath/edit/$1"
+ * @endcode
+ *
+ * There must be an appropriate script or rewrite rule in place to handle these
+ * URLs.
+ * @since 1.5
  */
-$wgActionPaths = array();
+$wgActionPaths = [];
 
 /**@}*/
 
@@ -275,38 +376,66 @@ $wgActionPaths = array();
  * @{
  */
 
-/** Uploads have to be specially set up to be secure */
+/**
+ * Uploads have to be specially set up to be secure
+ */
 $wgEnableUploads = false;
 
-/** Allows to move images and other media files */
+/**
+ * The maximum age of temporary (incomplete) uploaded files
+ */
+$wgUploadStashMaxAge = 6 * 3600; // 6 hours
+
+/**
+ * Allows to move images and other media files
+ */
 $wgAllowImageMoving = true;
 
 /**
- * These are additional characters that should be replaced with '-' in file names
+ * Enable deferred upload tasks that use the job queue.
+ * Only enable this if job runners are set up for both the
+ * 'AssembleUploadChunks' and 'PublishStashedFile' job types.
+ *
+ * @note If you use suhosin, this setting is incompatible with
+ *   suhosin.session.encrypt.
  */
-$wgIllegalFileChars = ":";
+$wgEnableAsyncUploads = false;
 
 /**
- * @deprecated since 1.17 use $wgDeletedDirectory
+ * Additional characters that are not allowed in filenames. They are replaced with '-' when
+ * uploading. Like $wgLegalTitleChars, this is a regexp character class.
+ *
+ * Slashes and backslashes are disallowed regardless of this setting, but included here for
+ * completeness.
  */
-$wgFileStore = array();
+$wgIllegalFileChars = ":\\/\\\\";
 
 /**
- * What directory to place deleted uploads in
+ * What directory to place deleted uploads in.
+ * Defaults to "{$wgUploadDirectory}/deleted".
  */
-$wgDeletedDirectory = false; //  Defaults to $wgUploadDirectory/deleted
+$wgDeletedDirectory = false;
 
 /**
  * Set this to true if you use img_auth and want the user to see details on why access failed.
  */
-$wgImgAuthDetails   = false;
+$wgImgAuthDetails = false;
 
 /**
- * If this is enabled, img_auth.php will not allow image access unless the wiki
- * is private. This improves security when image uploads are hosted on a
- * separate domain.
+ * Map of relative URL directories to match to internal mwstore:// base storage paths.
+ * For img_auth.php requests, everything after "img_auth.php/" is checked to see
+ * if starts with any of the prefixes defined here. The prefixes should not overlap.
+ * The prefix that matches has a corresponding storage path, which the rest of the URL
+ * is assumed to be relative to. The file at that path (or a 404) is send to the client.
+ *
+ * Example:
+ * $wgImgAuthUrlPathMap['/timeline/'] = 'mwstore://local-fs/timeline-render/';
+ * The above maps ".../img_auth.php/timeline/X" to "mwstore://local-fs/timeline-render/".
+ * The name "local-fs" should correspond by name to an entry in $wgFileBackends.
+ *
+ * @see $wgFileBackends
  */
-$wgImgAuthPublicTest = true;
+$wgImgAuthUrlPathMap = [];
 
 /**
  * File repository structures
@@ -317,12 +446,23 @@ $wgImgAuthPublicTest = true;
  *
  * Properties required for all repos:
  *   - class            The class name for the repository. May come from the core or an extension.
- *                      The core repository classes are LocalRepo, ForeignDBRepo, FSRepo.
+ *                      The core repository classes are FileRepo, LocalRepo, ForeignDBRepo.
  *
- *   - name	            A unique name for the repository.
+ *   - name             A unique name for the repository (but $wgLocalFileRepo should be 'local').
+ *                      The name should consist of alpha-numeric characters.
+ *   - backend          A file backend name (see $wgFileBackends).
  *
  * For most core repos:
- *   - url              Base public URL
+ *   - zones            Associative array of zone names that each map to an array with:
+ *                          container  : backend container name the zone is in
+ *                          directory  : root path within container for the zone
+ *                          url        : base URL to the root of the zone
+ *                          urlsByExt  : map of file extension types to base URLs
+ *                                       (useful for using a different cache for videos)
+ *                      Zones default to using "<repo name>-<zone name>" as the container name
+ *                      and default to using the container root as the zone's root directory.
+ *                      Nesting of zone locations within other zones should be avoided.
+ *   - url              Public zone URL. The 'zones' settings take precedence.
  *   - hashLevels       The number of directory levels for hash-based division of files
  *   - thumbScriptUrl   The URL for thumb.php (optional, not recommended)
  *   - transformVia404  Whether to skip media file transformation on parse and rely on a 404
@@ -339,25 +479,26 @@ $wgImgAuthPublicTest = true;
  *                      is 0644.
  *   - directory        The local filesystem directory where public files are stored. Not used for
  *                      some remote repos.
- *   - thumbDir         The base thumbnail directory. Defaults to <directory>/thumb.
- *   - thumbUrl         The base thumbnail URL. Defaults to <url>/thumb.
- *
+ *   - thumbDir         The base thumbnail directory. Defaults to "<directory>/thumb".
+ *   - thumbUrl         The base thumbnail URL. Defaults to "<url>/thumb".
+ *   - isPrivate        Set this if measures should always be taken to keep the files private.
+ *                      One should not trust this to assure that the files are not web readable;
+ *                      the server configuration should be done manually depending on the backend.
  *
  * These settings describe a foreign MediaWiki installation. They are optional, and will be ignored
  * for local repositories:
- *   - descBaseUrl       URL of image description pages, e.g. http://en.wikipedia.org/wiki/File:
+ *   - descBaseUrl       URL of image description pages, e.g. https://en.wikipedia.org/wiki/File:
  *   - scriptDirUrl      URL of the MediaWiki installation, equivalent to $wgScriptPath, e.g.
- *                       http://en.wikipedia.org/w
- *   - scriptExtension   Script extension of the MediaWiki installation, equivalent to
- *                       $wgScriptExtension, e.g. .php5 defaults to .php
- *
- *   - articleUrl        Equivalent to $wgArticlePath, e.g. http://en.wikipedia.org/wiki/$1
+ *                       https://en.wikipedia.org/w
+ *   - articleUrl        Equivalent to $wgArticlePath, e.g. https://en.wikipedia.org/wiki/$1
  *   - fetchDescription  Fetch the text of the remote file description page. Equivalent to
- *                      $wgFetchCommonsDescriptions.
+ *                       $wgFetchCommonsDescriptions.
+ *   - abbrvThreshold    File names over this size will use the short form of thumbnail names.
+ *                       Short thumbnail names only have the width, parameters, and the extension.
  *
  * ForeignDBRepo:
  *   - dbType, dbServer, dbUser, dbPassword, dbName, dbFlags
- *                      equivalent to the corresponding member of $wgDBservers
+ *                       equivalent to the corresponding member of $wgDBservers
  *   - tablePrefix       Table prefix, the foreign wiki's $wgDBprefix
  *   - hasSharedCache    True if the wiki's shared cache is accessible via the local $wgMemc
  *
@@ -368,14 +509,18 @@ $wgImgAuthPublicTest = true;
  * If you leave $wgLocalFileRepo set to false, Setup will fill in appropriate values.
  * Otherwise, set $wgLocalFileRepo to a repository structure as described above.
  * If you set $wgUseInstantCommons to true, it will add an entry for Commons.
- * If you set $wgForeignFileRepos to an array of repostory structures, those will
+ * If you set $wgForeignFileRepos to an array of repository structures, those will
  * be searched after the local file repo.
  * Otherwise, you will only have access to local media files.
+ *
+ * @see Setup.php for an example usage and default initialization.
  */
 $wgLocalFileRepo = false;
 
-/** @see $wgLocalFileRepo */
-$wgForeignFileRepos = array();
+/**
+ * @see $wgLocalFileRepo
+ */
+$wgForeignFileRepos = [];
 
 /**
  * Use Commons as a remote file repository. Essentially a wrapper, when this
@@ -385,15 +530,142 @@ $wgForeignFileRepos = array();
 $wgUseInstantCommons = false;
 
 /**
- * Show EXIF data, on by default if available.
- * Requires PHP's EXIF extension: http://www.php.net/manual/en/ref.exif.php
+ * Array of foreign file repo names (set in $wgForeignFileRepos above) that
+ * are allowable upload targets. These wikis must have some method of
+ * authentication (i.e. CentralAuth), and be CORS-enabled for this wiki.
+ * The string 'local' signifies the default local file repository.
  *
- * NOTE FOR WINDOWS USERS:
- * To enable EXIF functions, add the folloing lines to the
- * "Windows extensions" section of php.ini:
+ * Example:
+ * $wgForeignUploadTargets = [ 'shared' ];
+ */
+$wgForeignUploadTargets = [ 'local' ];
+
+/**
+ * Configuration for file uploads using the embeddable upload dialog
+ * (https://www.mediawiki.org/wiki/Upload_dialog).
  *
- * extension=extensions/php_mbstring.dll
+ * This applies also to foreign uploads to this wiki (the configuration is loaded by remote wikis
+ * using the action=query&meta=siteinfo API).
+ *
+ * See below for documentation of each property. None of the properties may be omitted.
+ */
+$wgUploadDialog = [
+	// Fields to make available in the dialog. `true` means that this field is visible, `false` means
+	// that it is hidden. The "Name" field can't be hidden. Note that you also have to add the
+	// matching replacement to the 'filepage' format key below to make use of these.
+	'fields' => [
+		'description' => true,
+		'date' => false,
+		'categories' => false,
+	],
+	// Suffix of localisation messages used to describe the license under which the uploaded file will
+	// be released. The same value may be set for both 'local' and 'foreign' uploads.
+	'licensemessages' => [
+		// The 'local' messages are used for local uploads on this wiki:
+		// * upload-form-label-own-work-message-generic-local
+		// * upload-form-label-not-own-work-message-generic-local
+		// * upload-form-label-not-own-work-local-generic-local
+		'local' => 'generic-local',
+		// The 'foreign' messages are used for cross-wiki uploads from other wikis to this wiki:
+		// * upload-form-label-own-work-message-generic-foreign
+		// * upload-form-label-not-own-work-message-generic-foreign
+		// * upload-form-label-not-own-work-local-generic-foreign
+		'foreign' => 'generic-foreign',
+	],
+	// Upload comments to use for 'local' and 'foreign' uploads. This can also be set to a single
+	// string value, in which case it is used for both kinds of uploads. Available replacements:
+	// * $HOST - domain name from which a cross-wiki upload originates
+	// * $PAGENAME - wiki page name from which an upload originates
+	'comment' => [
+		'local' => '',
+		'foreign' => '',
+	],
+	// Format of the file page wikitext to be generated from the fields input by the user.
+	'format' => [
+		// Wrapper for the whole page. Available replacements:
+		// * $DESCRIPTION - file description, as input by the user (only if the 'description' field is
+		//   enabled), wrapped as defined below in the 'description' key
+		// * $DATE - file creation date, as input by the user (only if the 'date' field is enabled)
+		// * $SOURCE - as defined below in the 'ownwork' key, may be extended in the future
+		// * $AUTHOR - linked user name, may be extended in the future
+		// * $LICENSE - as defined below in the 'license' key, may be extended in the future
+		// * $CATEGORIES - file categories wikitext, as input by the user (only if the 'categories'
+		//   field is enabled), or if no input, as defined below in the 'uncategorized' key
+		'filepage' => '$DESCRIPTION',
+		// Wrapped for file description. Available replacements:
+		// * $LANGUAGE - source wiki's content language
+		// * $TEXT - input by the user
+		'description' => '$TEXT',
+		'ownwork' => '',
+		'license' => '',
+		'uncategorized' => '',
+	],
+];
+
+/**
+ * File backend structure configuration.
+ *
+ * This is an array of file backend configuration arrays.
+ * Each backend configuration has the following parameters:
+ *  - 'name'         : A unique name for the backend
+ *  - 'class'        : The file backend class to use
+ *  - 'wikiId'       : A unique string that identifies the wiki (container prefix)
+ *  - 'lockManager'  : The name of a lock manager (see $wgLockManagers)
+ *
+ * See FileBackend::__construct() for more details.
+ * Additional parameters are specific to the file backend class used.
+ * These settings should be global to all wikis when possible.
+ *
+ * FileBackendMultiWrite::__construct() is augmented with a 'template' option that
+ * can be used in any of the values of the 'backends' array. Its value is the name of
+ * another backend in $wgFileBackends. When set, it pre-fills the array with all of the
+ * configuration of the named backend. Explicitly set values in the array take precedence.
+ *
+ * There are two particularly important aspects about each backend:
+ *   - a) Whether it is fully qualified or wiki-relative.
+ *        By default, the paths of files are relative to the current wiki,
+ *        which works via prefixing them with the current wiki ID when accessed.
+ *        Setting 'wikiId' forces the backend to be fully qualified by prefixing
+ *        all paths with the specified value instead. This can be useful if
+ *        multiple wikis need to share the same data. Note that 'name' is *not*
+ *        part of any prefix and thus should not be relied upon for namespacing.
+ *   - b) Whether it is only defined for some wikis or is defined on all
+ *        wikis in the wiki farm. Defining a backend globally is useful
+ *        if multiple wikis need to share the same data.
+ * One should be aware of these aspects when configuring a backend for use with
+ * any basic feature or plugin. For example, suppose an extension stores data for
+ * different wikis in different directories and sometimes needs to access data from
+ * a foreign wiki's directory in order to render a page on given wiki. The extension
+ * would need a fully qualified backend that is defined on all wikis in the wiki farm.
+ */
+$wgFileBackends = [];
+
+/**
+ * Array of configuration arrays for each lock manager.
+ * Each backend configuration has the following parameters:
+ *  - 'name'        : A unique name for the lock manager
+ *  - 'class'       : The lock manger class to use
+ *
+ * See LockManager::__construct() for more details.
+ * Additional parameters are specific to the lock manager class used.
+ * These settings should be global to all wikis.
+ *
+ * When using DBLockManager, the 'dbsByBucket' map can reference 'localDBMaster' as
+ * a peer database in each bucket. This will result in an extra connection to the domain
+ * that the LockManager services, which must also be a valid wiki ID.
+ */
+$wgLockManagers = [];
+
+/**
+ * Show Exif data, on by default if available.
+ * Requires PHP's Exif extension: https://secure.php.net/manual/en/ref.exif.php
+ *
+ * @note FOR WINDOWS USERS:
+ * To enable Exif functions, add the following line to the "Windows
+ * extensions" section of php.ini:
+ * @code{.ini}
  * extension=extensions/php_exif.dll
+ * @endcode
  */
 $wgShowEXIF = function_exists( 'exif_read_data' );
 
@@ -418,28 +690,77 @@ $wgUpdateCompatibleMetadata = false;
  * $wgForeignFileRepos variable.
  */
 $wgUseSharedUploads = false;
-/** Full path on the web server where shared uploads can be found */
-$wgSharedUploadPath = "http://commons.wikimedia.org/shared/images";
-/** Fetch commons image description pages and display them on the local wiki? */
-$wgFetchCommonsDescriptions = false;
-/** Path on the file system where shared uploads can be found. */
-$wgSharedUploadDirectory = "/var/www/wiki3/images";
-/** DB name with metadata about shared directory. Set this to false if the uploads do not come from a wiki. */
-$wgSharedUploadDBname = false;
-/** Optional table prefix used in database. */
-$wgSharedUploadDBprefix = '';
-/** Cache shared metadata in memcached. Don't do this if the commons wiki is in a different memcached domain */
-$wgCacheSharedUploads = true;
+
 /**
-* Allow for upload to be copied from an URL. Requires Special:Upload?source=web
-* The timeout for copy uploads is set by $wgHTTPTimeout.
-*/
-$wgAllowCopyUploads = false;
-/**
- * Allow asynchronous copy uploads.
- * This feature is experimental is broken as of r81612.
+ * Full path on the web server where shared uploads can be found
  */
-$wgAllowAsyncCopyUploads = false;
+$wgSharedUploadPath = null;
+
+/**
+ * Fetch commons image description pages and display them on the local wiki?
+ */
+$wgFetchCommonsDescriptions = false;
+
+/**
+ * Path on the file system where shared uploads can be found.
+ */
+$wgSharedUploadDirectory = null;
+
+/**
+ * DB name with metadata about shared directory.
+ * Set this to false if the uploads do not come from a wiki.
+ */
+$wgSharedUploadDBname = false;
+
+/**
+ * Optional table prefix used in database.
+ */
+$wgSharedUploadDBprefix = '';
+
+/**
+ * Cache shared metadata in memcached.
+ * Don't do this if the commons wiki is in a different memcached domain
+ */
+$wgCacheSharedUploads = true;
+
+/**
+ * Allow for upload to be copied from an URL.
+ * The timeout for copy uploads is set by $wgCopyUploadTimeout.
+ * You have to assign the user right 'upload_by_url' to a user group, to use this.
+ */
+$wgAllowCopyUploads = false;
+
+/**
+ * A list of domains copy uploads can come from
+ *
+ * @since 1.20
+ */
+$wgCopyUploadsDomains = [];
+
+/**
+ * Enable copy uploads from Special:Upload. $wgAllowCopyUploads must also be
+ * true. If $wgAllowCopyUploads is true, but this is false, you will only be
+ * able to perform copy uploads from the API or extensions (e.g. UploadWizard).
+ */
+$wgCopyUploadsFromSpecialUpload = false;
+
+/**
+ * Proxy to use for copy upload requests.
+ * @since 1.20
+ */
+$wgCopyUploadProxy = false;
+
+/**
+ * Different timeout for upload by url
+ * This could be useful since when fetching large files, you may want a
+ * timeout longer than the default $wgHTTPTimeout. False means fallback
+ * to default.
+ *
+ * @var int|bool
+ *
+ * @since 1.22
+ */
+$wgCopyUploadTimeout = false;
 
 /**
  * Max size for uploads, in bytes. If not set to an array, applies to all
@@ -447,41 +768,61 @@ $wgAllowAsyncCopyUploads = false;
  * file and url keys. If the * key is set this value will be used as maximum
  * for non-specified types.
  *
- * For example:
- * 	$wgMaxUploadSize = array(
- * 		'*' => 250 * 1024,
- * 		'url' => 500 * 1024,
- * 	);
+ * @par Example:
+ * @code
+ * $wgMaxUploadSize = [
+ *     '*' => 250 * 1024,
+ *     'url' => 500 * 1024,
+ * ];
+ * @endcode
  * Sets the maximum for all uploads to 250 kB except for upload-by-url, which
  * will have a maximum of 500 kB.
- *
  */
-$wgMaxUploadSize = 1024*1024*100; # 100MB
+$wgMaxUploadSize = 1024 * 1024 * 100; # 100MB
+
+/**
+ * Minimum upload chunk size, in bytes. When using chunked upload, non-final
+ * chunks smaller than this will be rejected. May be reduced based on the
+ * 'upload_max_filesize' or 'post_max_size' PHP settings.
+ * @since 1.26
+ */
+$wgMinUploadChunkSize = 1024; # 1KB
 
 /**
  * Point the upload navigation link to an external URL
  * Useful if you want to use a shared repository by default
- * without disabling local uploads (use $wgEnableUploads = false for that)
- * e.g. $wgUploadNavigationUrl = 'http://commons.wikimedia.org/wiki/Special:Upload';
+ * without disabling local uploads (use $wgEnableUploads = false for that).
+ *
+ * @par Example:
+ * @code
+ * $wgUploadNavigationUrl = 'https://commons.wikimedia.org/wiki/Special:Upload';
+ * @endcode
  */
 $wgUploadNavigationUrl = false;
 
 /**
  * Point the upload link for missing files to an external URL, as with
- * $wgUploadNavigationUrl. The URL will get (?|&)wpDestFile=<filename>
+ * $wgUploadNavigationUrl. The URL will get "(?|&)wpDestFile=<filename>"
  * appended to it as appropriate.
  */
 $wgUploadMissingFileUrl = false;
 
 /**
- * Give a path here to use thumb.php for thumbnail generation on client request, instead of
- * generating them on render and outputting a static URL. This is necessary if some of your
- * apache servers don't have read/write access to the thumbnail path.
+ * Give a path here to use thumb.php for thumbnail generation on client
+ * request, instead of generating them on render and outputting a static URL.
+ * This is necessary if some of your apache servers don't have read/write
+ * access to the thumbnail path.
  *
- * Example:
- *   $wgThumbnailScriptPath = "{$wgScriptPath}/thumb{$wgScriptExtension}";
+ * @par Example:
+ * @code
+ *   $wgThumbnailScriptPath = "{$wgScriptPath}/thumb.php";
+ * @endcode
  */
 $wgThumbnailScriptPath = false;
+
+/**
+ * @see $wgThumbnailScriptPath
+ */
 $wgSharedThumbnailScriptPath = false;
 
 /**
@@ -494,9 +835,10 @@ $wgSharedThumbnailScriptPath = false;
  * maintenance/rebuildImages.php to register them in the database. This is no
  * longer recommended, use maintenance/importImages.php instead.
  *
- * Note that this variable may be ignored if $wgLocalFileRepo is set.
+ * @note That this variable may be ignored if $wgLocalFileRepo is set.
+ * @todo Deprecate the setting and ultimately remove it from Core.
  */
-$wgHashedUploadDirectory	= true;
+$wgHashedUploadDirectory = true;
 
 /**
  * Set the following to false especially if you have a set of files that need to
@@ -513,20 +855,24 @@ $wgHashedSharedUploadDirectory = true;
  *
  * Please specify the namespace, as in the example below.
  */
-$wgRepositoryBaseUrl = "http://commons.wikimedia.org/wiki/File:";
+$wgRepositoryBaseUrl = "https://commons.wikimedia.org/wiki/File:";
 
 /**
  * This is the list of preferred extensions for uploading files. Uploading files
  * with extensions not in this list will trigger a warning.
  *
- * WARNING: If you add any OpenOffice or Microsoft Office file formats here,
+ * @warning If you add any OpenOffice or Microsoft Office file formats here,
  * such as odt or doc, and untrusted users are allowed to upload files, then
  * your wiki will be vulnerable to cross-site request forgery (CSRF).
  */
-$wgFileExtensions = array( 'png', 'gif', 'jpg', 'jpeg' );
+$wgFileExtensions = [ 'png', 'gif', 'jpg', 'jpeg', 'webp' ];
 
-/** Files with these extensions will never be allowed as uploads. */
-$wgFileBlacklist = array(
+/**
+ * Files with these extensions will never be allowed as uploads.
+ * An array of file extensions to blacklist. You should append to this array
+ * if you want to blacklist additional files.
+ */
+$wgFileBlacklist = [
 	# HTML may contain cookie-stealing JavaScript and web bugs
 	'html', 'htm', 'js', 'jsb', 'mhtml', 'mht', 'xhtml', 'xht',
 	# PHP scripts may execute arbitrary code on the server
@@ -534,15 +880,15 @@ $wgFileBlacklist = array(
 	# Other types that may be interpreted by some servers
 	'shtml', 'jhtml', 'pl', 'py', 'cgi',
 	# May contain harmful executables for Windows victims
-	'exe', 'scr', 'dll', 'msi', 'vbs', 'bat', 'com', 'pif', 'cmd', 'vxd', 'cpl' );
+	'exe', 'scr', 'dll', 'msi', 'vbs', 'bat', 'com', 'pif', 'cmd', 'vxd', 'cpl' ];
 
 /**
- * Files with these mime types will never be allowed as uploads
+ * Files with these MIME types will never be allowed as uploads
  * if $wgVerifyMimeType is enabled.
  */
-$wgMimeTypeBlacklist = array(
+$wgMimeTypeBlacklist = [
 	# HTML may contain cookie-stealing JavaScript and web bugs
-	'text/html', 'text/javascript', 'text/x-javascript',  'application/x-shellscript',
+	'text/html', 'text/javascript', 'text/x-javascript', 'application/x-shellscript',
 	# PHP scripts may execute arbitrary code on the server
 	'application/x-php', 'text/x-php',
 	# Other types that may be interpreted by some servers
@@ -551,19 +897,19 @@ $wgMimeTypeBlacklist = array(
 	'text/scriptlet', 'application/x-msdownload',
 	# Windows metafile, client-side vulnerability on some systems
 	'application/x-msmetafile',
-);
+];
 
 /**
  * Allow Java archive uploads.
- * This is not recommended for public wikis since a maliciously-constructed 
- * applet running on the same domain as the wiki can steal the user's cookies. 
+ * This is not recommended for public wikis since a maliciously-constructed
+ * applet running on the same domain as the wiki can steal the user's cookies.
  */
 $wgAllowJavaUploads = false;
 
 /**
  * This is a flag to determine whether or not to check file extensions on upload.
  *
- * WARNING: setting this to false is insecure for public wikis.
+ * @warning Setting this to false is insecure for public wikis.
  */
 $wgCheckFileExtensions = true;
 
@@ -571,15 +917,25 @@ $wgCheckFileExtensions = true;
  * If this is turned off, users may override the warning for files not covered
  * by $wgFileExtensions.
  *
- * WARNING: setting this to false is insecure for public wikis.
+ * @warning Setting this to false is insecure for public wikis.
  */
 $wgStrictFileExtensions = true;
 
-/** Warn if uploaded files are larger than this (in bytes), or false to disable*/
+/**
+ * Setting this to true will disable the upload system's checks for HTML/JavaScript.
+ *
+ * @warning THIS IS VERY DANGEROUS on a publicly editable site, so USE
+ * $wgGroupPermissions TO RESTRICT UPLOADING to only those that you trust
+ */
+$wgDisableUploadScriptChecks = false;
+
+/**
+ * Warn if uploaded files are larger than this (in bytes), or false to disable
+ */
 $wgUploadSizeWarning = false;
 
 /**
- * list of trusted media-types and mime types.
+ * list of trusted media-types and MIME types.
  * Use the MEDIATYPE_xxx constants to represent media types.
  * This list is used by File::isSafeFile
  *
@@ -588,32 +944,67 @@ $wgUploadSizeWarning = false;
  * to use this for further restrictions, like disabling direct
  * [[media:...]] links for non-trusted formats.
  */
-$wgTrustedMediaFormats = array(
-	MEDIATYPE_BITMAP, //all bitmap formats
-	MEDIATYPE_AUDIO,  //all audio formats
-	MEDIATYPE_VIDEO,  //all plain video formats
-	"image/svg+xml",  //svg (only needed if inline rendering of svg is not supported)
-	"application/pdf",  //PDF files
-	#"application/x-shockwave-flash", //flash/shockwave movie
-);
+$wgTrustedMediaFormats = [
+	MEDIATYPE_BITMAP, // all bitmap formats
+	MEDIATYPE_AUDIO, // all audio formats
+	MEDIATYPE_VIDEO, // all plain video formats
+	"image/svg+xml", // svg (only needed if inline rendering of svg is not supported)
+	"application/pdf", // PDF files
+	# "application/x-shockwave-flash", //flash/shockwave movie
+];
 
 /**
  * Plugins for media file type handling.
  * Each entry in the array maps a MIME type to a class name
+ *
+ * Core media handlers are listed in MediaHandlerFactory,
+ * and extensions should use extension.json.
  */
-$wgMediaHandlers = array(
-	'image/jpeg' => 'JpegHandler',
-	'image/png' => 'PNGHandler',
-	'image/gif' => 'GIFHandler',
-	'image/tiff' => 'TiffHandler',
-	'image/x-ms-bmp' => 'BmpHandler',
-	'image/x-bmp' => 'BmpHandler',
-	'image/svg+xml' => 'SvgHandler', // official
-	'image/svg' => 'SvgHandler', // compat
-	'image/vnd.djvu' => 'DjVuHandler', // official
-	'image/x.djvu' => 'DjVuHandler', // compat
-	'image/x-djvu' => 'DjVuHandler', // compat
-);
+$wgMediaHandlers = [];
+
+/**
+ * Media handler overrides for parser tests (they don't need to generate actual
+ * thumbnails, so a mock will do)
+ */
+$wgParserTestMediaHandlers = [
+	'image/jpeg' => 'MockBitmapHandler',
+	'image/png' => 'MockBitmapHandler',
+	'image/gif' => 'MockBitmapHandler',
+	'image/tiff' => 'MockBitmapHandler',
+	'image/webp' => 'MockBitmapHandler',
+	'image/x-ms-bmp' => 'MockBitmapHandler',
+	'image/x-bmp' => 'MockBitmapHandler',
+	'image/x-xcf' => 'MockBitmapHandler',
+	'image/svg+xml' => 'MockSvgHandler',
+	'image/vnd.djvu' => 'MockDjVuHandler',
+];
+
+/**
+ * Plugins for page content model handling.
+ * Each entry in the array maps a model id to a class name or callback
+ * that creates an instance of the appropriate ContentHandler subclass.
+ *
+ * @since 1.21
+ */
+$wgContentHandlers = [
+	// the usual case
+	CONTENT_MODEL_WIKITEXT => WikitextContentHandler::class,
+	// dumb version, no syntax highlighting
+	CONTENT_MODEL_JAVASCRIPT => JavaScriptContentHandler::class,
+	// simple implementation, for use by extensions, etc.
+	CONTENT_MODEL_JSON => JsonContentHandler::class,
+	// dumb version, no syntax highlighting
+	CONTENT_MODEL_CSS => CssContentHandler::class,
+	// plain text, for use by extensions, etc.
+	CONTENT_MODEL_TEXT => TextContentHandler::class,
+];
+
+/**
+ * Whether to enable server-side image thumbnailing. If false, images will
+ * always be sent to the client in full resolution, with appropriate width= and
+ * height= attributes on the <img> tag for the client to do its own scaling.
+ */
+$wgUseImageResize = true;
 
 /**
  * Resizing can be done using PHP's internal image libraries or using
@@ -623,14 +1014,27 @@ $wgMediaHandlers = array(
  *
  * Use Image Magick instead of PHP builtin functions.
  */
-$wgUseImageMagick		= false;
-/** The convert command shipped with ImageMagick */
-$wgImageMagickConvertCommand    = '/usr/bin/convert';
+$wgUseImageMagick = false;
 
-/** Sharpening parameter to ImageMagick */
+/**
+ * The convert command shipped with ImageMagick
+ */
+$wgImageMagickConvertCommand = '/usr/bin/convert';
+
+/**
+ * Array of max pixel areas for interlacing per MIME type
+ * @since 1.27
+ */
+$wgMaxInterlacingAreas = [];
+
+/**
+ * Sharpening parameter to ImageMagick
+ */
 $wgSharpenParameter = '0x0.4';
 
-/** Reduction in linear dimensions below which sharpening will be enabled */
+/**
+ * Reduction in linear dimensions below which sharpening will be enabled
+ */
 $wgSharpenReductionThreshold = 0.85;
 
 /**
@@ -644,14 +1048,55 @@ $wgImageMagickTempDir = false;
  * %s will be replaced with the source path, %d with the destination
  * %w and %h will be replaced with the width and height.
  *
- * Example for GraphicMagick:
- * <code>
+ * @par Example for GraphicMagick:
+ * @code
  * $wgCustomConvertCommand = "gm convert %s -resize %wx%h %d"
- * </code>
+ * @endcode
  *
  * Leave as false to skip this.
  */
 $wgCustomConvertCommand = false;
+
+/**
+ * used for lossless jpeg rotation
+ *
+ * @since 1.21
+ */
+$wgJpegTran = '/usr/bin/jpegtran';
+
+/**
+ * At default setting of 'yuv420', JPEG thumbnails will use 4:2:0 chroma
+ * subsampling to reduce file size, at the cost of possible color fringing
+ * at sharp edges.
+ *
+ * See https://en.wikipedia.org/wiki/Chroma_subsampling
+ *
+ * Supported values:
+ *   false - use scaling system's default (same as pre-1.27 behavior)
+ *   'yuv444' - luma and chroma at same resolution
+ *   'yuv422' - chroma at 1/2 resolution horizontally, full vertically
+ *   'yuv420' - chroma at 1/2 resolution in both dimensions
+ *
+ * This setting is currently supported only for the ImageMagick backend;
+ * others may default to 4:2:0 or 4:4:4 or maintaining the source file's
+ * sampling in the thumbnail.
+ *
+ * @since 1.27
+ */
+$wgJpegPixelFormat = 'yuv420';
+
+/**
+ * Some tests and extensions use exiv2 to manipulate the Exif metadata in some
+ * image formats.
+ */
+$wgExiv2Command = '/usr/bin/exiv2';
+
+/**
+ * Path to exiftool binary. Used for lossless ICC profile swapping.
+ *
+ * @since 1.26
+ */
+$wgExiftool = '/usr/bin/exiftool';
 
 /**
  * Scalable Vector Graphics (SVG) may be uploaded as images.
@@ -662,40 +1107,67 @@ $wgCustomConvertCommand = false;
  * If set to an array, the first item is a PHP callable and any further items
  * are passed as parameters after $srcPath, $dstPath, $width, $height
  */
-$wgSVGConverters = array(
-	'ImageMagick' => '$path/convert -background white -thumbnail $widthx$height\! $input PNG:$output',
+$wgSVGConverters = [
+	'ImageMagick' =>
+		'$path/convert -background "#ffffff00" -thumbnail $widthx$height\! $input PNG:$output',
 	'sodipodi' => '$path/sodipodi -z -w $width -f $input -e $output',
 	'inkscape' => '$path/inkscape -z -w $width -f $input -e $output',
-	'batik' => 'java -Djava.awt.headless=true -jar $path/batik-rasterizer.jar -w $width -d $output $input',
-	'rsvg' => '$path/rsvg -w$width -h$height $input $output',
+	'batik' => 'java -Djava.awt.headless=true -jar $path/batik-rasterizer.jar -w $width -d '
+		. '$output $input',
+	'rsvg' => '$path/rsvg-convert -w $width -h $height -o $output $input',
 	'imgserv' => '$path/imgserv-wrapper -i svg -o png -w$width $input $output',
-	'ImagickExt' => array( 'SvgHandler::rasterizeImagickExt' ),
-	);
-/** Pick a converter defined in $wgSVGConverters */
-$wgSVGConverter = 'ImageMagick';
-/** If not in the executable PATH, specify the SVG converter path. */
-$wgSVGConverterPath = '';
-/** Don't scale a SVG larger than this */
-$wgSVGMaxSize = 2048;
-/** Don't read SVG metadata beyond this point.
- * Default is 1024*256 bytes */
-$wgSVGMetadataCutoff = 262144; 
+	'ImagickExt' => [ 'SvgHandler::rasterizeImagickExt' ],
+];
 
 /**
- * MediaWiki will reject HTMLesque tags in uploaded files due to idiotic browsers which can't
- * perform basic stuff like MIME detection and which are vulnerable to further idiots uploading
- * crap files as images. When this directive is on, <title> will be allowed in files with
- * an "image/svg+xml" MIME type. You should leave this disabled if your web server is misconfigured
- * and doesn't send appropriate MIME types for SVG images.
+ * Pick a converter defined in $wgSVGConverters
+ */
+$wgSVGConverter = 'ImageMagick';
+
+/**
+ * If not in the executable PATH, specify the SVG converter path.
+ */
+$wgSVGConverterPath = '';
+
+/**
+ * Don't scale a SVG larger than this
+ */
+$wgSVGMaxSize = 5120;
+
+/**
+ * Don't read SVG metadata beyond this point.
+ * Default is 1024*256 bytes
+ */
+$wgSVGMetadataCutoff = 262144;
+
+/**
+ * Disallow <title> element in SVG files.
+ *
+ * MediaWiki will reject HTMLesque tags in uploaded files due to idiotic
+ * browsers which can not perform basic stuff like MIME detection and which are
+ * vulnerable to further idiots uploading crap files as images.
+ *
+ * When this directive is on, "<title>" will be allowed in files with an
+ * "image/svg+xml" MIME type. You should leave this disabled if your web server
+ * is misconfigured and doesn't send appropriate MIME types for SVG images.
  */
 $wgAllowTitlesInSVG = false;
 
 /**
- * Don't thumbnail an image if it will use too much working memory.
- * Default is 50 MB if decompressed to RGBA form, which corresponds to
- * 12.5 million pixels or 3500x3500
+ * The maximum number of pixels a source image can have if it is to be scaled
+ * down by a scaler that requires the full source image to be decompressed
+ * and stored in decompressed form, before the thumbnail is generated.
+ *
+ * This provides a limit on memory usage for the decompression side of the
+ * image scaler. The limit is used when scaling PNGs with any of the
+ * built-in image scalers, such as ImageMagick or GD. It is ignored for
+ * JPEGs with ImageMagick, and when using the VipsScaler extension.
+ *
+ * The default is 50 MB if decompressed to RGBA form, which corresponds to
+ * 12.5 million pixels or 3500x3500.
  */
 $wgMaxImageArea = 1.25e7;
+
 /**
  * Force thumbnailing of animated GIFs above this size to a single
  * frame instead of an animated thumbnail.  As of MW 1.17 this limit
@@ -703,20 +1175,21 @@ $wgMaxImageArea = 1.25e7;
  * It probably makes sense to keep this equal to $wgMaxImageArea.
  */
 $wgMaxAnimatedGifArea = 1.25e7;
+
 /**
  * Browsers don't support TIFF inline generally...
  * For inline display, we need to convert to PNG or JPEG.
  * Note scaling should work with ImageMagick, but may not with GD scaling.
  *
- * Example:
- * <code>
+ * @par Example:
+ * @code
  *  // PNG is lossless, but inefficient for photos
- *  $wgTiffThumbnailType = array( 'png', 'image/png' );
+ *  $wgTiffThumbnailType = [ 'png', 'image/png' ];
  *  // JPEG is good for photos, but has no transparency support. Bad for diagrams.
- *  $wgTiffThumbnailType = array( 'jpg', 'image/jpeg' );
- * </code>
+ *  $wgTiffThumbnailType = [ 'jpg', 'image/jpeg' ];
+ * @endcode
  */
- $wgTiffThumbnailType = false;
+$wgTiffThumbnailType = false;
 
 /**
  * If rendered thumbnail files are older than this timestamp, they
@@ -727,7 +1200,15 @@ $wgMaxAnimatedGifArea = 1.25e7;
 $wgThumbnailEpoch = '20030516000000';
 
 /**
- * If set, inline scaled images will still produce <img> tags ready for
+ * Certain operations are avoided if there were too many recent failures,
+ * for example, thumbnail generation. Bump this value to invalidate all
+ * memory of failed operations and thus allow further attempts to resume.
+ * This is useful when a cause for the failures has been found and fixed.
+ */
+$wgAttemptFailureEpoch = 1;
+
+/**
+ * If set, inline scaled images will still produce "<img>" tags ready for
  * output instead of showing an error message.
  *
  * This may be useful if errors are transitory, especially if the site
@@ -749,20 +1230,23 @@ $wgIgnoreImageErrors = false;
 $wgGenerateThumbnailOnParse = true;
 
 /**
-* Show thumbnails for old images on the image description page
-*/
+ * Show thumbnails for old images on the image description page
+ */
 $wgShowArchiveThumbnails = true;
 
-/** Obsolete, always true, kept for compatibility with extensions */
-$wgUseImageResize = true;
-
+/**
+ * If set to true, images that contain certain the exif orientation tag will
+ * be rotated accordingly. If set to null, try to auto-detect whether a scaler
+ * is available that can rotate.
+ */
+$wgEnableAutoRotation = null;
 
 /**
- * Internal name of virus scanner. This servers as a key to the
+ * Internal name of virus scanner. This serves as a key to the
  * $wgAntivirusSetup array. Set this to NULL to disable virus scanning. If not
  * null, every file uploaded will be scanned for viruses.
  */
-$wgAntivirus= null;
+$wgAntivirus = null;
 
 /**
  * Configuration for different virus scanners. This an associative array of
@@ -776,7 +1260,7 @@ $wgAntivirus= null;
  * "command" is the full command to call the virus scanner - %f will be
  * replaced with the name of the file to scan. If not present, the filename
  * will be appended to the command. Note that this must be overwritten if the
- * scanner is not in the system path; in that case, plase set
+ * scanner is not in the system path; in that case, please set
  * $wgAntivirusSetup[$wgAntivirus]['command'] to the desired command with full
  * path.
  *
@@ -786,8 +1270,8 @@ $wgAntivirus= null;
  *     the scan to be failed. This will pass the file if $wgAntivirusRequired
  *     is not set.
  *   - An exit code mapped to AV_SCAN_ABORTED causes the function to consider
- *     the file to have an usupported format, which is probably imune to
- *     virusses. This causes the file to pass.
+ *     the file to have an unsupported format, which is probably immune to
+ *     viruses. This causes the file to pass.
  *   - An exit code mapped to AV_NO_VIRUS will cause the file to pass, meaning
  *     no virus was found.
  *   - All other codes (like AV_VIRUS_FOUND) will cause the function to report
@@ -798,133 +1282,197 @@ $wgAntivirus= null;
  * output. The relevant part should be matched as group one (\1).
  * If not defined or the pattern does not match, the full message is shown to the user.
  */
-$wgAntivirusSetup = array(
+$wgAntivirusSetup = [
 
-	#setup for clamav
-	'clamav' => array (
-		'command' => "clamscan --no-summary ",
-
-		'codemap' => array (
-			"0" =>  AV_NO_VIRUS, # no virus
-			"1" =>  AV_VIRUS_FOUND, # virus found
-			"52" => AV_SCAN_ABORTED, # unsupported file format (probably imune)
-			"*" =>  AV_SCAN_FAILED, # else scan failed
-		),
-
-		'messagepattern' => '/.*?:(.*)/sim',
-	),
-
-	#setup for f-prot
-	'f-prot' => array (
-		'command' => "f-prot ",
-
-		'codemap' => array (
+	# setup for clamav
+	'clamav' => [
+		'command' => 'clamscan --no-summary ',
+		'codemap' => [
 			"0" => AV_NO_VIRUS, # no virus
-			"3" => AV_VIRUS_FOUND, # virus found
-			"6" => AV_VIRUS_FOUND, # virus found
+			"1" => AV_VIRUS_FOUND, # virus found
+			"52" => AV_SCAN_ABORTED, # unsupported file format (probably immune)
 			"*" => AV_SCAN_FAILED, # else scan failed
-		),
-
-		'messagepattern' => '/.*?Infection:(.*)$/m',
-	),
-);
-
-
-/** Determines if a failed virus scan (AV_SCAN_FAILED) will cause the file to be rejected. */
-$wgAntivirusRequired = true;
-
-/** Determines if the mime type of uploaded files should be checked */
-$wgVerifyMimeType = true;
-
-/** Sets the mime type definition file to use by MimeMagic.php. */
-$wgMimeTypeFile = "includes/mime.types";
-#$wgMimeTypeFile= "/etc/mime.types";
-#$wgMimeTypeFile= null; #use built-in defaults only.
-
-/** Sets the mime type info file to use by MimeMagic.php. */
-$wgMimeInfoFile= "includes/mime.info";
-#$wgMimeInfoFile= null; #use built-in defaults only.
+		],
+		'messagepattern' => '/.*?:(.*)/sim',
+	],
+];
 
 /**
- * Switch for loading the FileInfo extension by PECL at runtime.
- * This should be used only if fileinfo is installed as a shared object
- * or a dynamic library.
+ * Determines if a failed virus scan (AV_SCAN_FAILED) will cause the file to be rejected.
  */
-$wgLoadFileinfoExtension = false;
+$wgAntivirusRequired = true;
 
-/** Sets an external mime detector program. The command must print only
- * the mime type to standard output.
+/**
+ * Determines if the MIME type of uploaded files should be checked
+ */
+$wgVerifyMimeType = true;
+
+/**
+ * Sets the MIME type definition file to use by MimeMagic.php.
+ * Set to null, to use built-in defaults only.
+ * example: $wgMimeTypeFile = '/etc/mime.types';
+ */
+$wgMimeTypeFile = 'includes/mime.types';
+
+/**
+ * Sets the MIME type info file to use by MimeMagic.php.
+ * Set to null, to use built-in defaults only.
+ */
+$wgMimeInfoFile = 'includes/mime.info';
+
+/**
+ * Sets an external MIME detector program. The command must print only
+ * the MIME type to standard output.
  * The name of the file to process will be appended to the command given here.
- * If not set or NULL, mime_content_type will be used if available.
- * Example:
- * <code>
- * #$wgMimeDetectorCommand = "file -bi"; # use external mime detector (Linux)
- * </code>
+ * If not set or NULL, PHP's mime_content_type function will be used.
+ *
+ * @par Example:
+ * @code
+ * #$wgMimeDetectorCommand = "file -bi"; # use external MIME detector (Linux)
+ * @endcode
  */
 $wgMimeDetectorCommand = null;
 
 /**
- * Switch for trivial mime detection. Used by thumb.php to disable all fancy
+ * Switch for trivial MIME detection. Used by thumb.php to disable all fancy
  * things, because only a few types of images are needed and file extensions
  * can be trusted.
  */
 $wgTrivialMimeDetection = false;
 
 /**
- * Additional XML types we can allow via mime-detection.
- * array = ( 'rootElement' => 'associatedMimeType' )
+ * Additional XML types we can allow via MIME-detection.
+ * array = [ 'rootElement' => 'associatedMimeType' ]
  */
-$wgXMLMimeTypes = array(
-		'http://www.w3.org/2000/svg:svg'    			=> 'image/svg+xml',
-		'svg'                               			=> 'image/svg+xml',
-		'http://www.lysator.liu.se/~alla/dia/:diagram' 	=> 'application/x-dia-diagram',
-		'http://www.w3.org/1999/xhtml:html'				=> 'text/html', // application/xhtml+xml?
-		'html'                              			=> 'text/html', // application/xhtml+xml?
-		'http://www.opengis.net/kml/2.1:kml'			=> 'application/vnd.google-earth.kml+xml',
-		'http://www.opengis.net/kml/2.2:kml'			=> 'application/vnd.google-earth.kml+xml',
-		'kml'											=> 'application/vnd.google-earth.kml+xml',
-);
+$wgXMLMimeTypes = [
+	'http://www.w3.org/2000/svg:svg' => 'image/svg+xml',
+	'svg' => 'image/svg+xml',
+	'http://www.lysator.liu.se/~alla/dia/:diagram' => 'application/x-dia-diagram',
+	'http://www.w3.org/1999/xhtml:html' => 'text/html', // application/xhtml+xml?
+	'html' => 'text/html', // application/xhtml+xml?
+];
 
 /**
  * Limit images on image description pages to a user-selectable limit. In order
  * to reduce disk usage, limits can only be selected from a list.
  * The user preference is saved as an array offset in the database, by default
  * the offset is set with $wgDefaultUserOptions['imagesize']. Make sure you
- * change it if you alter the array (see bug 8858).
+ * change it if you alter the array (see T10858).
  * This is the list of settings the user can choose from:
  */
-$wgImageLimits = array (
-	array(320,240),
-	array(640,480),
-	array(800,600),
-	array(1024,768),
-	array(1280,1024),
-	array(10000,10000) );
+$wgImageLimits = [
+	[ 320, 240 ],
+	[ 640, 480 ],
+	[ 800, 600 ],
+	[ 1024, 768 ],
+	[ 1280, 1024 ]
+];
 
 /**
  * Adjust thumbnails on image pages according to a user setting. In order to
  * reduce disk usage, the values can only be selected from a list. This is the
  * list of settings the user can choose from:
  */
-$wgThumbLimits = array(
+$wgThumbLimits = [
 	120,
 	150,
 	180,
 	200,
 	250,
 	300
-);
+];
 
 /**
- * Default parameters for the <gallery> tag
+ * When defined, is an array of image widths used as buckets for thumbnail generation.
+ * The goal is to save resources by generating thumbnails based on reference buckets instead of
+ * always using the original. This will incur a speed gain but cause a quality loss.
+ *
+ * The buckets generation is chained, with each bucket generated based on the above bucket
+ * when possible. File handlers have to opt into using that feature. For now only BitmapHandler
+ * supports it.
  */
-$wgGalleryOptions = array (
-	'imagesPerRow' => 0, // Default number of images per-row in the gallery. 0 -> Adapt to screensize
-	'imageWidth' => 120, // Width of the cells containing images in galleries (in "px")
-	'imageHeight' => 120, // Height of the cells containing images in galleries (in "px")
-	'captionLength' => 25, // Length of caption to truncate (in characters)
-	'showBytes' => true, // Show the filesize in bytes in categories
-);
+$wgThumbnailBuckets = null;
+
+/**
+ * When using thumbnail buckets as defined above, this sets the minimum distance to the bucket
+ * above the requested size. The distance represents how many extra pixels of width the bucket
+ * needs in order to be used as the reference for a given thumbnail. For example, with the
+ * following buckets:
+ *
+ * $wgThumbnailBuckets = [ 128, 256, 512 ];
+ *
+ * and a distance of 50:
+ *
+ * $wgThumbnailMinimumBucketDistance = 50;
+ *
+ * If we want to render a thumbnail of width 220px, the 512px bucket will be used,
+ * because 220 + 50 = 270 and the closest bucket bigger than 270px is 512.
+ */
+$wgThumbnailMinimumBucketDistance = 50;
+
+/**
+ * When defined, is an array of thumbnail widths to be rendered at upload time. The idea is to
+ * prerender common thumbnail sizes, in order to avoid the necessity to render them on demand, which
+ * has a performance impact for the first client to view a certain size.
+ *
+ * This obviously means that more disk space is needed per upload upfront.
+ *
+ * @since 1.25
+ */
+
+$wgUploadThumbnailRenderMap = [];
+
+/**
+ * The method through which the thumbnails will be prerendered for the entries in
+ * $wgUploadThumbnailRenderMap
+ *
+ * The method can be either "http" or "jobqueue". The former uses an http request to hit the
+ * thumbnail's URL.
+ * This method only works if thumbnails are configured to be rendered by a 404 handler. The latter
+ * option uses the job queue to render the thumbnail.
+ *
+ * @since 1.25
+ */
+$wgUploadThumbnailRenderMethod = 'jobqueue';
+
+/**
+ * When using the "http" wgUploadThumbnailRenderMethod, lets one specify a custom Host HTTP header.
+ *
+ * @since 1.25
+ */
+$wgUploadThumbnailRenderHttpCustomHost = false;
+
+/**
+ * When using the "http" wgUploadThumbnailRenderMethod, lets one specify a custom domain to send the
+ * HTTP request to.
+ *
+ * @since 1.25
+ */
+$wgUploadThumbnailRenderHttpCustomDomain = false;
+
+/**
+ * When this variable is true and JPGs use the sRGB ICC profile, swaps it for the more lightweight
+ * (and free) TinyRGB profile when generating thumbnails.
+ *
+ * @since 1.26
+ */
+$wgUseTinyRGBForJPGThumbnails = false;
+
+/**
+ * Parameters for the "<gallery>" tag.
+ * Fields are:
+ *   - imagesPerRow:   Default number of images per-row in the gallery. 0 -> Adapt to screensize
+ *   - imageWidth:     Width of the cells containing images in galleries (in "px")
+ *   - imageHeight:    Height of the cells containing images in galleries (in "px")
+ *   - captionLength:  Length to truncate filename to in caption when using "showfilename".
+ *                     A value of 'true' will truncate the filename to one line using CSS
+ *                     and will be the behaviour after deprecation.
+ *                     @deprecated since 1.28
+ *   - showBytes:      Show the filesize in bytes in categories
+ *   - showDimensions: Show the dimensions (width x height) in categories
+ *   - mode:           Gallery mode
+ */
+$wgGalleryOptions = [];
 
 /**
  * Adjust width of upright images when parameter 'upright' is used
@@ -939,50 +1487,72 @@ $wgThumbUpright = 0.75;
 $wgDirectoryMode = 0777;
 
 /**
- * DJVU settings
+ * Generate and use thumbnails suitable for screens with 1.5 and 2.0 pixel densities.
+ *
+ * This means a 320x240 use of an image on the wiki will also generate 480x360 and 640x480
+ * thumbnails, output via the srcset attribute.
+ *
+ * On older browsers, a JavaScript polyfill switches the appropriate images in after loading
+ * the original low-resolution versions depending on the reported window.devicePixelRatio.
+ * The polyfill can be found in the jquery.hidpi module.
+ */
+$wgResponsiveImages = true;
+
+/**
+ * @name DJVU settings
+ * @{
+ */
+
+/**
  * Path of the djvudump executable
  * Enable this and $wgDjvuRenderer to enable djvu rendering
+ * example: $wgDjvuDump = 'djvudump';
  */
-# $wgDjvuDump = 'djvudump';
 $wgDjvuDump = null;
 
 /**
  * Path of the ddjvu DJVU renderer
  * Enable this and $wgDjvuDump to enable djvu rendering
+ * example: $wgDjvuRenderer = 'ddjvu';
  */
-# $wgDjvuRenderer = 'ddjvu';
 $wgDjvuRenderer = null;
 
 /**
  * Path of the djvutxt DJVU text extraction utility
  * Enable this and $wgDjvuDump to enable text layer extraction from djvu files
+ * example: $wgDjvuTxt = 'djvutxt';
  */
-# $wgDjvuTxt = 'djvutxt';
 $wgDjvuTxt = null;
 
 /**
  * Path of the djvutoxml executable
  * This works like djvudump except much, much slower as of version 3.5.
  *
- * For now I recommend you use djvudump instead. The djvuxml output is
+ * For now we recommend you use djvudump instead. The djvuxml output is
  * probably more stable, so we'll switch back to it as soon as they fix
  * the efficiency problem.
- * http://sourceforge.net/tracker/index.php?func=detail&aid=1704049&group_id=32953&atid=406583
+ * https://sourceforge.net/tracker/index.php?func=detail&aid=1704049&group_id=32953&atid=406583
+ *
+ * @par Example:
+ * @code
+ * $wgDjvuToXML = 'djvutoxml';
+ * @endcode
  */
-# $wgDjvuToXML = 'djvutoxml';
 $wgDjvuToXML = null;
-
 
 /**
  * Shell command for the DJVU post processor
- * Default: pnmtopng, since ddjvu generates ppm output
+ * Default: pnmtojpeg, since ddjvu generates ppm output
  * Set this to false to output the ppm file directly.
  */
 $wgDjvuPostProcessor = 'pnmtojpeg';
+
 /**
  * File extension for the DJVU post processor output
  */
 $wgDjvuOutputExtension = 'jpg';
+
+/** @} */ # end of DJvu }
 
 /** @} */ # end of file uploads }
 
@@ -993,29 +1563,33 @@ $wgDjvuOutputExtension = 'jpg';
 
 /**
  * Site admin email address.
- */
-$wgEmergencyContact = 'wikiadmin@' . $serverName;
-
-/**
- * Password reminder email address.
  *
- * The address we should use as sender when a user is requesting his password.
+ * Defaults to "wikiadmin@$wgServerName".
  */
-$wgPasswordSender = 'apache@' . $serverName;
-
-unset( $serverName ); # Don't leak local variables to global scope
+$wgEmergencyContact = false;
 
 /**
- * Password reminder name
+ * Sender email address for e-mail notifications.
+ *
+ * The address we use as sender when a user requests a password reminder.
+ *
+ * Defaults to "apache@$wgServerName".
+ */
+$wgPasswordSender = false;
+
+/**
+ * Sender name for e-mail notifications.
+ *
+ * @deprecated since 1.23; use the system message 'emailsender' instead.
  */
 $wgPasswordSenderName = 'MediaWiki Mail';
 
 /**
- * Dummy address which should be accepted during mail send action.
- * It might be necessary to adapt the address or to set it equal
- * to the $wgEmergencyContact address.
+ * Reply-To address for e-mail notifications.
+ *
+ * Defaults to $wgPasswordSender.
  */
-$wgNoReplyAddress = 'reply@not.possible';
+$wgNoReplyAddress = false;
 
 /**
  * Set to true to enable the e-mail basic features:
@@ -1031,14 +1605,22 @@ $wgEnableEmail = true;
 $wgEnableUserEmail = true;
 
 /**
- * Set to true to put the sending user's email in a Reply-To header
- * instead of From. ($wgEmergencyContact will be used as From.)
+ * Set to true to enable user-to-user e-mail blacklist.
  *
- * Some mailers (eg sSMTP) set the SMTP envelope sender to the From value,
- * which can cause problems with SPF validation and leak recipient addressses
- * when bounces are sent to the sender.
+ * @since 1.30
  */
-$wgUserEmailUseReplyTo = false;
+$wgEnableUserEmailBlacklist = false;
+
+/**
+ * If true put the sending user's email in a Reply-To header
+ * instead of From (false). ($wgPasswordSender will be used as From.)
+ *
+ * Some mailers (eg SMTP) set the SMTP envelope sender to the From value,
+ * which can cause problems with SPF validation and leak recipient addresses
+ * when bounces are sent to the sender. In addition, DMARC restrictions
+ * can cause emails to fail to be received when false.
+ */
+$wgUserEmailUseReplyTo = true;
 
 /**
  * Minimum time, in hours, which must elapse between password reminder
@@ -1049,7 +1631,7 @@ $wgPasswordReminderResendTime = 24;
 /**
  * The time, in seconds, when an emailed temporary password expires.
  */
-$wgNewPasswordExpiry  = 3600 * 24 * 7;
+$wgNewPasswordExpiry = 3600 * 24 * 7;
 
 /**
  * The time, in seconds, when an email confirmation email expires
@@ -1057,66 +1639,100 @@ $wgNewPasswordExpiry  = 3600 * 24 * 7;
 $wgUserEmailConfirmationTokenExpiry = 7 * 24 * 60 * 60;
 
 /**
- * SMTP Mode
+ * The number of days that a user's password is good for. After this number of days, the
+ * user will be asked to reset their password. Set to false to disable password expiration.
+ */
+$wgPasswordExpirationDays = false;
+
+/**
+ * If a user's password is expired, the number of seconds when they can still login,
+ * and cancel their password change, but are sent to the password change form on each login.
+ */
+$wgPasswordExpireGrace = 3600 * 24 * 7; // 7 days
+
+/**
+ * SMTP Mode.
+ *
  * For using a direct (authenticated) SMTP server connection.
  * Default to false or fill an array :
- * <code>
- * "host" => 'SMTP domain',
- * "IDHost" => 'domain for MessageID',
- * "port" => "25",
- * "auth" => true/false,
- * "username" => user,
- * "password" => password
- * </code>
+ *
+ * @code
+ * $wgSMTP = [
+ *     'host'     => 'SMTP domain',
+ *     'IDHost'   => 'domain for MessageID',
+ *     'port'     => '25',
+ *     'auth'     => [true|false],
+ *     'username' => [SMTP username],
+ *     'password' => [SMTP password],
+ * ];
+ * @endcode
  */
-$wgSMTP				= false;
+$wgSMTP = false;
 
 /**
  * Additional email parameters, will be passed as the last argument to mail() call.
- * If using safe_mode this has no effect
  */
 $wgAdditionalMailParams = null;
+
+/**
+ * For parts of the system that have been updated to provide HTML email content, send
+ * both text and HTML parts as the body of the email
+ */
+$wgAllowHTMLEmail = false;
 
 /**
  * True: from page editor if s/he opted-in. False: Enotif mails appear to come
  * from $wgEmergencyContact
  */
-$wgEnotifFromEditor	= false;
+$wgEnotifFromEditor = false;
 
 // TODO move UPO to preferences probably ?
-# If set to true, users get a corresponding option in their preferences and can choose to enable or disable at their discretion
+# If set to true, users get a corresponding option in their preferences and can choose to
+# enable or disable at their discretion
 # If set to false, the corresponding input form on the user preference page is suppressed
 # It call this to be a "user-preferences-option (UPO)"
 
 /**
- * Require email authentication before sending mail to an email addres. This is
- * highly recommended. It prevents MediaWiki from being used as an open spam
- * relay.
+ * Require email authentication before sending mail to an email address.
+ * This is highly recommended. It prevents MediaWiki from being used as an open
+ * spam relay.
  */
-$wgEmailAuthentication				= true;
+$wgEmailAuthentication = true;
 
 /**
  * Allow users to enable email notification ("enotif") on watchlist changes.
  */
-$wgEnotifWatchlist		= false;
+$wgEnotifWatchlist = false;
 
 /**
  * Allow users to enable email notification ("enotif") when someone edits their
  * user talk page.
+ *
+ * The owner of the user talk page must also have the 'enotifusertalkpages' user
+ * preference set to true.
  */
-$wgEnotifUserTalk		= false;
+$wgEnotifUserTalk = false;
 
 /**
  * Set the Reply-to address in notifications to the editor's address, if user
  * allowed this in the preferences.
  */
-$wgEnotifRevealEditorAddress	= false;
+$wgEnotifRevealEditorAddress = false;
 
 /**
- * Send notification mails on minor edits to watchlist pages. This is enabled
- * by default. Does not affect user talk notifications.
+ * Potentially send notification mails on minor edits to pages. This is enabled
+ * by default.  If this is false, users will never be notified on minor edits.
+ *
+ * If it is true, editors with the 'nominornewtalk' right (typically bots) will still not
+ * trigger notifications for minor edits they make (to any page, not just user talk).
+ *
+ * Finally, if the watcher/recipient has the 'enotifminoredits' user preference set to
+ * false, they will not receive notifications for minor edits.
+ *
+ * User talk notifications are also affected by $wgEnotifMinorEdits, the above settings,
+ * $wgEnotifUserTalk, and the preference described there.
  */
-$wgEnotifMinorEdits		= true;
+$wgEnotifMinorEdits = true;
 
 /**
  * Send a generic mail instead of a personalised mail for each user.  This
@@ -1134,22 +1750,15 @@ $wgEnotifImpersonal = false;
 $wgEnotifMaxRecips = 500;
 
 /**
- * Send mails via the job queue. This can be useful to reduce the time it
- * takes to save a page that a lot of people are watching.
- */
-$wgEnotifUseJobQ = false;
-
-/**
  * Use real name instead of username in e-mail "from" field.
  */
 $wgEnotifUseRealName = false;
 
 /**
  * Array of usernames who will be sent a notification email for every change
- * which occurs on a wiki.
+ * which occurs on a wiki. Users will not be notified of their own changes.
  */
-$wgUsersNotifiedOnAllChanges = array();
-
+$wgUsersNotifiedOnAllChanges = [];
 
 /** @} */ # end of email settings
 
@@ -1157,22 +1766,65 @@ $wgUsersNotifiedOnAllChanges = array();
  * @name   Database settings
  * @{
  */
-/** Database host name or IP address */
-$wgDBserver         = 'localhost';
-/** Database port number (for PostgreSQL) */
-$wgDBport           = 5432;
-/** Name of the database */
-$wgDBname           = 'my_wiki';
-/** Database username */
-$wgDBuser           = 'wikiuser';
-/** Database user's password */
-$wgDBpassword       = '';
-/** Database type */
-$wgDBtype           = 'mysql';
 
-/** Separate username for maintenance tasks. Leave as null to use the default. */
+/**
+ * Database host name or IP address
+ */
+$wgDBserver = 'localhost';
+
+/**
+ * Database port number (for PostgreSQL and Microsoft SQL Server).
+ */
+$wgDBport = 5432;
+
+/**
+ * Name of the database
+ */
+$wgDBname = 'my_wiki';
+
+/**
+ * Database username
+ */
+$wgDBuser = 'wikiuser';
+
+/**
+ * Database user's password
+ */
+$wgDBpassword = '';
+
+/**
+ * Database type
+ */
+$wgDBtype = 'mysql';
+
+/**
+ * Whether to use SSL in DB connection.
+ *
+ * This setting is only used if $wgLBFactoryConf['class'] is set to
+ * '\Wikimedia\Rdbms\LBFactorySimple' and $wgDBservers is an empty array; otherwise
+ * the DBO_SSL flag must be set in the 'flags' option of the database
+ * connection to achieve the same functionality.
+ */
+$wgDBssl = false;
+
+/**
+ * Whether to use compression in DB connection.
+ *
+ * This setting is only used $wgLBFactoryConf['class'] is set to
+ * '\Wikimedia\Rdbms\LBFactorySimple' and $wgDBservers is an empty array; otherwise
+ * the DBO_COMPRESS flag must be set in the 'flags' option of the database
+ * connection to achieve the same functionality.
+ */
+$wgDBcompress = false;
+
+/**
+ * Separate username for maintenance tasks. Leave as null to use the default.
+ */
 $wgDBadminuser = null;
-/** Separate password for maintenance tasks. Leave as null to use the default. */
+
+/**
+ * Separate password for maintenance tasks. Leave as null to use the default.
+ */
 $wgDBadminpassword = null;
 
 /**
@@ -1181,12 +1833,26 @@ $wgDBadminpassword = null;
  * selected database type (eg SearchMySQL), or set to a class
  * name to override to a custom search engine.
  */
-$wgSearchType	    = null;
+$wgSearchType = null;
 
-/** Table name prefix */
-$wgDBprefix         = '';
-/** MySQL table options to use during installation or update */
-$wgDBTableOptions   = 'ENGINE=InnoDB';
+/**
+ * Alternative search types
+ * Sometimes you want to support multiple search engines for testing. This
+ * allows users to select their search engine of choice via url parameters
+ * to Special:Search and the action=search API. If using this, there's no
+ * need to add $wgSearchType to it, that is handled automatically.
+ */
+$wgSearchTypeAlternatives = null;
+
+/**
+ * Table name prefix
+ */
+$wgDBprefix = '';
+
+/**
+ * MySQL table options to use during installation or update
+ */
+$wgDBTableOptions = 'ENGINE=InnoDB';
 
 /**
  * SQL Mode - default is turning off all modes, including strict, if set.
@@ -1196,18 +1862,15 @@ $wgDBTableOptions   = 'ENGINE=InnoDB';
  */
 $wgSQLMode = '';
 
-/** Mediawiki schema */
-$wgDBmwschema       = 'mediawiki';
-
-/** To override default SQLite data directory ($docroot/../data) */
-$wgSQLiteDataDir    = '';
+/**
+ * Mediawiki schema
+ */
+$wgDBmwschema = null;
 
 /**
- * Make all database connections secretly go to localhost. Fool the load balancer
- * thinking there is an arbitrarily large cluster of servers to connect to.
- * Useful for debugging.
+ * To override default SQLite data directory ($docroot/../data)
  */
-$wgAllDBsAreLocalhost = false;
+$wgSQLiteDataDir = '';
 
 /**
  * Shared database for multiple wikis. Commonly used for storing a user table
@@ -1220,19 +1883,37 @@ $wgAllDBsAreLocalhost = false;
  * preferences shared (preferences were stored in the user table prior to 1.16)
  *
  * $wgSharedTables may be customized with a list of tables to share in the shared
- * datbase. However it is advised to limit what tables you do share as many of
+ * database. However it is advised to limit what tables you do share as many of
  * MediaWiki's tables may have side effects if you try to share them.
- * EXPERIMENTAL
  *
  * $wgSharedPrefix is the table prefix for the shared database. It defaults to
  * $wgDBprefix.
+ *
+ * $wgSharedSchema is the table schema for the shared database. It defaults to
+ * $wgDBmwschema.
+ *
+ * @deprecated since 1.21 In new code, use the $wiki parameter to wfGetLB() to
+ *   access remote databases. Using wfGetLB() allows the shared database to
+ *   reside on separate servers to the wiki's own database, with suitable
+ *   configuration of $wgLBFactoryConf.
  */
-$wgSharedDB     = null;
+$wgSharedDB = null;
 
-/** @see $wgSharedDB */
+/**
+ * @see $wgSharedDB
+ */
 $wgSharedPrefix = false;
-/** @see $wgSharedDB */
-$wgSharedTables = array( 'user', 'user_properties' );
+
+/**
+ * @see $wgSharedDB
+ */
+$wgSharedTables = [ 'user', 'user_properties' ];
+
+/**
+ * @see $wgSharedDB
+ * @since 1.23
+ */
+$wgSharedSchema = false;
 
 /**
  * Database load balancer
@@ -1242,20 +1923,32 @@ $wgSharedTables = array( 'user', 'user_properties' );
  *   - dbname:      Default database name
  *   - user:        DB user
  *   - password:    DB password
- *   - type:        "mysql" or "postgres"
- *   - load:        ratio of DB_SLAVE load, must be >=0, the sum of all loads must be >0
+ *   - type:        DB type
+ *   - driver:      DB driver (when there are multiple drivers)
+ *
+ *   - load:        Ratio of DB_REPLICA load, must be >=0, the sum of all loads must be >0.
+ *                  If this is zero for any given server, no normal query traffic will be
+ *                  sent to it. It will be excluded from lag checks in maintenance scripts.
+ *                  The only way it can receive traffic is if groupLoads is used.
+ *
  *   - groupLoads:  array of load ratios, the key is the query group name. A query may belong
  *                  to several groups, the most specific group defined here is used.
  *
  *   - flags:       bit field
- *                  - DBO_DEFAULT -- turns on DBO_TRX only if !$wgCommandLineMode (recommended)
+ *                  - DBO_DEFAULT -- turns on DBO_TRX only if "cliMode" is off (recommended)
  *                  - DBO_DEBUG -- equivalent of $wgDebugDumpSql
  *                  - DBO_TRX -- wrap entire request in a transaction
- *                  - DBO_IGNORE -- ignore errors (not useful in LocalSettings.php)
  *                  - DBO_NOBUFFER -- turn off buffering (not useful in LocalSettings.php)
+ *                  - DBO_PERSISTENT -- enables persistent database connections
+ *                  - DBO_SSL -- uses SSL/TLS encryption in database connections, if available
+ *                  - DBO_COMPRESS -- uses internal compression in database connections,
+ *                                    if available
  *
- *   - max lag:     (optional) Maximum replication lag before a slave will taken out of rotation
- *   - max threads: (optional) Maximum number of running threads
+ *   - max lag:     (optional) Maximum replication lag before a replica DB goes out of rotation
+ *   - is static:   (optional) Set to true if the dataset is static and no replication is used.
+ *   - cliMode:     (optional) Connection handles will not assume that requests are short-lived
+ *                  nor that INSERT..SELECT can be rewritten into a buffered SELECT and INSERT.
+ *                  [Default: uses value of $wgCommandLineMode]
  *
  *   These and any other user-defined properties will be assigned to the mLBInfo member
  *   variable of the Database object.
@@ -1265,19 +1958,19 @@ $wgSharedTables = array( 'user', 'user_properties' );
  * perhaps in some command-line scripts).
  *
  * The first server listed in this array (with key 0) will be the master. The
- * rest of the servers will be slaves. To prevent writes to your slaves due to
+ * rest of the servers will be replica DBs. To prevent writes to your replica DBs due to
  * accidental misconfiguration or MediaWiki bugs, set read_only=1 on all your
- * slaves in my.cnf. You can set read_only mode at runtime using:
+ * replica DBs in my.cnf. You can set read_only mode at runtime using:
  *
- * <code>
+ * @code
  *     SET @@read_only=1;
- * </code>
+ * @endcode
  *
- * Since the effect of writing to a slave is so damaging and difficult to clean
+ * Since the effect of writing to a replica DB is so damaging and difficult to clean
  * up, we at Wikimedia set read_only=1 in my.cnf on all our DB servers, even
  * our masters, and then set read_only=0 on masters at runtime.
  */
-$wgDBservers		= false;
+$wgDBservers = false;
 
 /**
  * Load balancer factory configuration
@@ -1286,37 +1979,49 @@ $wgDBservers		= false;
  * The class identified here is responsible for reading $wgDBservers,
  * $wgDBserver, etc., so overriding it may cause those globals to be ignored.
  *
- * The LBFactory_Multi class is provided for this purpose, please see
- * includes/db/LBFactory_Multi.php for configuration information.
+ * The LBFactoryMulti class is provided for this purpose, please see
+ * includes/db/LBFactoryMulti.php for configuration information.
  */
-$wgLBFactoryConf    = array( 'class' => 'LBFactory_Simple' );
-
-/** How long to wait for a slave to catch up to the master */
-$wgMasterWaitTimeout = 10;
-
-/** File to log database errors to */
-$wgDBerrorLog		= false;
-
-/** When to give an error message */
-$wgDBClusterTimeout = 10;
+$wgLBFactoryConf = [ 'class' => \Wikimedia\Rdbms\LBFactorySimple::class ];
 
 /**
- * Scale load balancer polling time so that under overload conditions, the database server
- * receives a SHOW STATUS query at an average interval of this many microseconds
+ * After a state-changing request is done by a client, this determines
+ * how many seconds that client should keep using the master datacenter.
+ * This avoids unexpected stale or 404 responses due to replication lag.
+ * @since 1.27
  */
-$wgDBAvgStatusPoll = 2000;
+$wgDataCenterUpdateStickTTL = 10;
 
-/** Set to true if using InnoDB tables */
-$wgDBtransactions	= false;
-/** Set to true for compatibility with extensions that might be checking.
- * MySQL 3.23.x is no longer supported. */
-$wgDBmysql4			= true;
+/**
+ * File to log database errors to
+ */
+$wgDBerrorLog = false;
+
+/**
+ * Timezone to use in the error log.
+ * Defaults to the wiki timezone ($wgLocaltimezone).
+ *
+ * A list of usable timezones can found at:
+ * https://secure.php.net/manual/en/timezones.php
+ *
+ * @par Examples:
+ * @code
+ * $wgDBerrorLogTZ = 'UTC';
+ * $wgDBerrorLogTZ = 'GMT';
+ * $wgDBerrorLogTZ = 'PST8PDT';
+ * $wgDBerrorLogTZ = 'Europe/Sweden';
+ * $wgDBerrorLogTZ = 'CET';
+ * @endcode
+ *
+ * @since 1.20
+ */
+$wgDBerrorLogTZ = false;
 
 /**
  * Set to true to engage MySQL 4.1/5.0 charset-related features;
  * for now will just cause sending of 'SET NAMES=utf8' on connect.
  *
- * WARNING: THIS IS EXPERIMENTAL!
+ * @warning THIS IS EXPERIMENTAL!
  *
  * May break if you're not using the table defs from mysql5/tables.sql.
  * May break if you're upgrading an existing wiki if set differently.
@@ -1327,15 +2032,45 @@ $wgDBmysql4			= true;
  * Even correct usage may cause failures with Unicode supplementary
  * characters (those not in the Basic Multilingual Plane) unless MySQL
  * has enhanced their Unicode support.
+ *
+ * @deprecated since 1.31
  */
-$wgDBmysql5			= false;
+$wgDBmysql5 = false;
 
 /**
- * Other wikis on this site, can be administered from a single developer
- * account.
+ * Set true to enable Oracle DCRP (supported from 11gR1 onward)
+ *
+ * To use this feature set to true and use a datasource defined as
+ * POOLED (i.e. in tnsnames definition set server=pooled in connect_data
+ * block).
+ *
+ * Starting from 11gR1 you can use DCRP (Database Resident Connection
+ * Pool) that maintains established sessions and reuses them on new
+ * connections.
+ *
+ * Not completely tested, but it should fall back on normal connection
+ * in case the pool is full or the datasource is not configured as
+ * pooled.
+ * And the other way around; using oci_pconnect on a non pooled
+ * datasource should produce a normal connection.
+ *
+ * When it comes to frequent shortlived DB connections like with MW
+ * Oracle tends to s***. The problem is the driver connects to the
+ * database reasonably fast, but establishing a session takes time and
+ * resources. MW does not rely on session state (as it does not use
+ * features such as package variables) so establishing a valid session
+ * is in this case an unwanted overhead that just slows things down.
+ *
+ * @warning EXPERIMENTAL!
+ */
+$wgDBOracleDRCP = false;
+
+/**
+ * Other wikis on this site, can be administered from a single developer account.
+ *
  * Array numeric key => database name
  */
-$wgLocalDatabases = array();
+$wgLocalDatabases = [];
 
 /**
  * If lag is higher than $wgSlaveLagWarning, show a warning in some special
@@ -1343,16 +2078,18 @@ $wgLocalDatabases = array();
  * show a more obvious warning.
  */
 $wgSlaveLagWarning = 10;
-/** @see $wgSlaveLagWarning */
+
+/**
+ * @see $wgSlaveLagWarning
+ */
 $wgSlaveLagCritical = 30;
 
 /**
- * Use old names for change_tags indices.
+ * Use Windows Authentication instead of $wgDBuser / $wgDBpassword for MS SQL Server
  */
-$wgOldChangeTagsIndex = false;
+$wgDBWindowsAuthentication = false;
 
 /**@}*/ # End of DB settings }
-
 
 /************************************************************************//**
  * @name   Text storage
@@ -1362,38 +2099,53 @@ $wgOldChangeTagsIndex = false;
 /**
  * We can also compress text stored in the 'text' table. If this is set on, new
  * revisions will be compressed on page save if zlib support is available. Any
- * compressed revisions will be decompressed on load regardless of this setting
- * *but will not be readable at all* if zlib support is not available.
+ * compressed revisions will be decompressed on load regardless of this setting,
+ * but will not be readable at all* if zlib support is not available.
  */
 $wgCompressRevisions = false;
 
 /**
  * External stores allow including content
- * from non database sources following URL links
+ * from non database sources following URL links.
  *
  * Short names of ExternalStore classes may be specified in an array here:
- * $wgExternalStores = array("http","file","custom")...
+ * @code
+ * $wgExternalStores = [ "http","file","custom" ]...
+ * @endcode
  *
  * CAUTION: Access to database might lead to code execution
  */
-$wgExternalStores = false;
+$wgExternalStores = [];
 
 /**
- * An array of external mysql servers, e.g.
- * $wgExternalServers = array( 'cluster1' => array( 'srv28', 'srv29', 'srv30' ) );
- * Used by LBFactory_Simple, may be ignored if $wgLBFactoryConf is set to another class.
+ * An array of external MySQL servers.
+ *
+ * @par Example:
+ * Create a cluster named 'cluster1' containing three servers:
+ * @code
+ * $wgExternalServers = [
+ *     'cluster1' => <array in the same format as $wgDBservers>
+ * ];
+ * @endcode
+ *
+ * Used by \Wikimedia\Rdbms\LBFactorySimple, may be ignored if $wgLBFactoryConf is set to
+ * another class.
  */
-$wgExternalServers = array();
+$wgExternalServers = [];
 
 /**
  * The place to put new revisions, false to put them in the local text table.
  * Part of a URL, e.g. DB://cluster1
  *
  * Can be an array instead of a single string, to enable data distribution. Keys
- * must be consecutive integers, starting at zero. Example:
+ * must be consecutive integers, starting at zero.
  *
- * $wgDefaultExternalStore = array( 'DB://cluster1', 'DB://cluster2' );
+ * @par Example:
+ * @code
+ * $wgDefaultExternalStore = [ 'DB://cluster1', 'DB://cluster2' ];
+ * @endcode
  *
+ * @var array
  */
 $wgDefaultExternalStore = false;
 
@@ -1403,7 +2155,7 @@ $wgDefaultExternalStore = false;
  *
  * Set to 0 to disable, or number of seconds before cache expiry.
  */
-$wgRevisionCacheExpiry = 0;
+$wgRevisionCacheExpiry = 86400 * 7;
 
 /** @} */ # end text storage }
 
@@ -1411,48 +2163,55 @@ $wgRevisionCacheExpiry = 0;
  * @name   Performance hacks and limits
  * @{
  */
-/** Disable database-intensive features */
+
+/**
+ * Disable database-intensive features
+ */
 $wgMiserMode = false;
-/** Disable all query pages if miser mode is on, not just some */
+
+/**
+ * Disable all query pages if miser mode is on, not just some
+ */
 $wgDisableQueryPages = false;
-/** Number of rows to cache in 'querycache' table when miser mode is on */
+
+/**
+ * Number of rows to cache in 'querycache' table when miser mode is on
+ */
 $wgQueryCacheLimit = 1000;
-/** Number of links to a page required before it is deemed "wanted" */
+
+/**
+ * Number of links to a page required before it is deemed "wanted"
+ */
 $wgWantedPagesThreshold = 1;
-/** Enable slow parser functions */
+
+/**
+ * Enable slow parser functions
+ */
 $wgAllowSlowParserFunctions = false;
 
 /**
- * Do DELETE/INSERT for link updates instead of incremental
+ * Allow schema updates
  */
-$wgUseDumbLinkUpdate = false;
-
-/**
- * Anti-lock flags - bitfield
- *   - ALF_PRELOAD_LINKS:
- *       Preload links during link update for save
- *   - ALF_PRELOAD_EXISTENCE:
- *       Preload cur_id during replaceLinkHolders
- *   - ALF_NO_LINK_LOCK:
- *       Don't use locking reads when updating the link table. This is
- *       necessary for wikis with a high edit rate for performance
- *       reasons, but may cause link table inconsistency
- *   - ALF_NO_BLOCK_LOCK:
- *       As for ALF_LINK_LOCK, this flag is a necessity for high-traffic
- *       wikis.
- */
-$wgAntiLockFlags = 0;
+$wgAllowSchemaUpdates = true;
 
 /**
  * Maximum article size in kilobytes
  */
-$wgMaxArticleSize	= 2048;
+$wgMaxArticleSize = 2048;
 
 /**
  * The minimum amount of memory that MediaWiki "needs"; MediaWiki will try to
  * raise PHP's memory limit if it's below this amount.
  */
 $wgMemoryLimit = "50M";
+
+/**
+ * The minimum amount of time that MediaWiki needs for "slow" write request,
+ * particularly ones with multiple non-atomic writes that *should* be as
+ * transactional as possible; MediaWiki will call set_time_limit() if needed.
+ * @since 1.26
+ */
+$wgTransactionalTimeLimit = 120;
 
 /** @} */ # end performance hacks }
 
@@ -1463,7 +2222,7 @@ $wgMemoryLimit = "50M";
 
 /**
  * Directory for caching data in the local filesystem. Should not be accessible
- * from the web. Set this to false to not use any local caches.
+ * from the web.
  *
  * Note: if multiple wikis share the same localisation cache directory, they
  * must all have the same set of extensions. You can set a directory just for
@@ -1473,8 +2232,8 @@ $wgCacheDirectory = false;
 
 /**
  * Main cache type. This should be a cache with fast access, but it may have
- * limited space. By default, it is disabled, since the database is not fast
- * enough to make it worthwhile.
+ * limited space. By default, it is disabled, since the stock database cache
+ * is not fast enough to make it worthwhile.
  *
  * The options are:
  *
@@ -1482,11 +2241,8 @@ $wgCacheDirectory = false;
  *   - CACHE_NONE:       Do not cache
  *   - CACHE_DB:         Store cache objects in the DB
  *   - CACHE_MEMCACHED:  MemCached, must specify servers in $wgMemCachedServers
- *   - CACHE_ACCEL:      eAccelerator, APC, XCache or WinCache
- *   - CACHE_DBA:        Use PHP's DBA extension to store in a DBM-style
- *                       database. This is slow, and is not recommended for
- *                       anything other than debugging.
- *   - (other):          A string may be used which identifies a cache 
+ *   - CACHE_ACCEL:      APC, APCU or WinCache
+ *   - (other):          A string may be used which identifies a cache
  *                       configuration in $wgObjectCaches.
  *
  * @see $wgMessageCacheType, $wgParserCacheType
@@ -1510,66 +2266,196 @@ $wgMessageCacheType = CACHE_ANYTHING;
 $wgParserCacheType = CACHE_ANYTHING;
 
 /**
- * Advanced object cache configuration.
+ * The cache type for storing session data.
  *
- * Use this to define the class names and constructor parameters which are used 
- * for the various cache types. Custom cache types may be defined here and 
- * referenced from $wgMainCacheType, $wgMessageCacheType or $wgParserCacheType.
- *
- * The format is an associative array where the key is a cache identifier, and 
- * the value is an associative array of parameters. The "class" parameter is the
- * class name which will be used. Alternatively, a "factory" parameter may be 
- * given, giving a callable function which will generate a suitable cache object.
- *
- * The other parameters are dependent on the class used.
+ * For available types see $wgMainCacheType.
  */
-$wgObjectCaches = array(
-	CACHE_NONE => array( 'class' => 'EmptyBagOStuff' ),
-	CACHE_DB => array( 'class' => 'SqlBagOStuff', 'table' => 'objectcache' ),
-	CACHE_DBA => array( 'class' => 'DBABagOStuff' ),
-
-	CACHE_ANYTHING => array( 'factory' => 'ObjectCache::newAnything' ),
-	CACHE_ACCEL => array( 'factory' => 'ObjectCache::newAccelerator' ),
-	CACHE_MEMCACHED => array( 'factory' => 'ObjectCache::newMemcached' ),
-
-	'eaccelerator' => array( 'class' => 'eAccelBagOStuff' ),
-	'apc' => array( 'class' => 'APCBagOStuff' ),
-	'xcache' => array( 'class' => 'XCacheBagOStuff' ),
-	'wincache' => array( 'class' => 'WinCacheBagOStuff' ),
-	'memcached-php' => array( 'class' => 'MemcachedPhpBagOStuff' ),
-);
+$wgSessionCacheType = CACHE_ANYTHING;
 
 /**
- * The expiry time for the parser cache, in seconds. The default is 86.4k
- * seconds, otherwise known as a day.
+ * The cache type for storing language conversion tables,
+ * which are used when parsing certain text and interface messages.
+ *
+ * For available types see $wgMainCacheType.
+ *
+ * @since 1.20
+ */
+$wgLanguageConverterCacheType = CACHE_ANYTHING;
+
+/**
+ * Advanced object cache configuration.
+ *
+ * Use this to define the class names and constructor parameters which are used
+ * for the various cache types. Custom cache types may be defined here and
+ * referenced from $wgMainCacheType, $wgMessageCacheType, $wgParserCacheType,
+ * or $wgLanguageConverterCacheType.
+ *
+ * The format is an associative array where the key is a cache identifier, and
+ * the value is an associative array of parameters. The "class" parameter is the
+ * class name which will be used. Alternatively, a "factory" parameter may be
+ * given, giving a callable function which will generate a suitable cache object.
+ */
+$wgObjectCaches = [
+	CACHE_NONE => [ 'class' => EmptyBagOStuff::class, 'reportDupes' => false ],
+	CACHE_DB => [ 'class' => SqlBagOStuff::class, 'loggroup' => 'SQLBagOStuff' ],
+
+	CACHE_ANYTHING => [ 'factory' => 'ObjectCache::newAnything' ],
+	CACHE_ACCEL => [ 'factory' => 'ObjectCache::getLocalServerInstance' ],
+	CACHE_MEMCACHED => [ 'class' => MemcachedPhpBagOStuff::class, 'loggroup' => 'memcached' ],
+
+	'db-replicated' => [
+		'class'       => ReplicatedBagOStuff::class,
+		'readFactory' => [
+			'class' => SqlBagOStuff::class,
+			'args'  => [ [ 'slaveOnly' => true ] ]
+		],
+		'writeFactory' => [
+			'class' => SqlBagOStuff::class,
+			'args'  => [ [ 'slaveOnly' => false ] ]
+		],
+		'loggroup'  => 'SQLBagOStuff',
+		'reportDupes' => false
+	],
+
+	'apc' => [ 'class' => APCBagOStuff::class, 'reportDupes' => false ],
+	'apcu' => [ 'class' => APCUBagOStuff::class, 'reportDupes' => false ],
+	'wincache' => [ 'class' => WinCacheBagOStuff::class, 'reportDupes' => false ],
+	'memcached-php' => [ 'class' => MemcachedPhpBagOStuff::class, 'loggroup' => 'memcached' ],
+	'memcached-pecl' => [ 'class' => MemcachedPeclBagOStuff::class, 'loggroup' => 'memcached' ],
+	'hash' => [ 'class' => HashBagOStuff::class, 'reportDupes' => false ],
+];
+
+/**
+ * Main Wide-Area-Network cache type. This should be a cache with fast access,
+ * but it may have limited space. By default, it is disabled, since the basic stock
+ * cache is not fast enough to make it worthwhile. For single data-center setups, this can
+ * simply be pointed to a cache in $wgWANObjectCaches that uses a local $wgObjectCaches
+ * cache with a relayer of type EventRelayerNull.
+ *
+ * The options are:
+ *   - false:            Configure the cache using $wgMainCacheType, without using
+ *                       a relayer (only matters if there are multiple data-centers)
+ *   - CACHE_NONE:       Do not cache
+ *   - (other):          A string may be used which identifies a cache
+ *                       configuration in $wgWANObjectCaches
+ * @since 1.26
+ */
+$wgMainWANCache = false;
+
+/**
+ * Advanced WAN object cache configuration.
+ *
+ * Each WAN cache wraps a registered object cache (for the local cluster)
+ * and it must also be configured to point to a PubSub instance. Subscribers
+ * must be configured to relay purges to the actual cache servers.
+ *
+ * The format is an associative array where the key is a cache identifier, and
+ * the value is an associative array of parameters. The "cacheId" parameter is
+ * a cache identifier from $wgObjectCaches. The "channels" parameter is a map of
+ * actions ('purge') to PubSub channels defined in $wgEventRelayerConfig.
+ * The "loggroup" parameter controls where log events are sent.
+ *
+ * @since 1.26
+ */
+$wgWANObjectCaches = [
+	CACHE_NONE => [
+		'class'    => WANObjectCache::class,
+		'cacheId'  => CACHE_NONE,
+		'channels' => []
+	]
+	/* Example of a simple single data-center cache:
+	'memcached-php' => [
+		'class'    => WANObjectCache::class,
+		'cacheId'  => 'memcached-php',
+		'channels' => [ 'purge' => 'wancache-main-memcached-purge' ]
+	]
+	*/
+];
+
+/**
+ * Verify and enforce WAN cache purges using reliable DB sources as streams.
+ *
+ * These secondary cache purges are de-duplicated via simple cache mutexes.
+ * This improves consistency when cache purges are lost, which becomes more likely
+ * as more cache servers are added or if there are multiple datacenters. Only keys
+ * related to important mutable content will be checked.
+ *
+ * @var bool
+ * @since 1.29
+ */
+$wgEnableWANCacheReaper = false;
+
+/**
+ * Main object stash type. This should be a fast storage system for storing
+ * lightweight data like hit counters and user activity. Sites with multiple
+ * data-centers should have this use a store that replicates all writes. The
+ * store should have enough consistency for CAS operations to be usable.
+ * Reads outside of those needed for merge() may be eventually consistent.
+ *
+ * The options are:
+ *   - db:      Store cache objects in the DB
+ *   - (other): A string may be used which identifies a cache
+ *              configuration in $wgObjectCaches
+ *
+ * @since 1.26
+ */
+$wgMainStash = 'db-replicated';
+
+/**
+ * The expiry time for the parser cache, in seconds.
+ * The default is 86400 (one day).
  */
 $wgParserCacheExpireTime = 86400;
 
 /**
- * Select which DBA handler <http://www.php.net/manual/en/dba.requirements.php> to use as CACHE_DBA backend
+ * @deprecated since 1.27, session data is always stored in object cache.
  */
-$wgDBAhandler = 'db3';
+$wgSessionsInObjectCache = true;
 
 /**
- * Store sessions in MemCached. This can be useful to improve performance, or to
- * avoid the locking behaviour of PHP's default session handler, which tends to
- * prevent multiple requests for the same user from acting concurrently.
+ * The expiry time to use for session storage, in seconds.
  */
-$wgSessionsInMemcached = false;
+$wgObjectCacheSessionExpiry = 3600;
 
 /**
- * This is used for setting php's session.save_handler. In practice, you will
- * almost never need to change this ever. Other options might be 'user' or
- * 'session_mysql.' Setting to null skips setting this entirely (which might be
- * useful if you're doing cross-application sessions, see bug 11381)
+ * @deprecated since 1.27, MediaWiki\Session\SessionManager doesn't use PHP session storage.
  */
-$wgSessionHandler = 'files';
+$wgSessionHandler = null;
 
-/** If enabled, will send MemCached debugging information to $wgDebugLogFile */
-$wgMemCachedDebug   = false;
+/**
+ * Whether to use PHP session handling ($_SESSION and session_*() functions)
+ *
+ * If the constant MW_NO_SESSION is defined, this is forced to 'disable'.
+ *
+ * If the constant MW_NO_SESSION_HANDLER is defined, this is ignored and PHP
+ * session handling will function independently of SessionHandler.
+ * SessionHandler and PHP's session handling may attempt to override each
+ * others' cookies.
+ *
+ * @since 1.27
+ * @var string
+ *  - 'enable': Integrate with PHP's session handling as much as possible.
+ *  - 'warn': Integrate but log warnings if anything changes $_SESSION.
+ *  - 'disable': Throw exceptions if PHP session handling is used.
+ */
+$wgPHPSessionHandling = 'enable';
 
-/** The list of MemCached servers and port numbers */
-$wgMemCachedServers = array( '127.0.0.1:11000' );
+/**
+ * Number of internal PBKDF2 iterations to use when deriving session secrets.
+ *
+ * @since 1.28
+ */
+$wgSessionPbkdf2Iterations = 10001;
+
+/**
+ * If enabled, will send MemCached debugging information to $wgDebugLogFile
+ */
+$wgMemCachedDebug = false;
+
+/**
+ * The list of MemCached servers and port numbers
+ */
+$wgMemCachedServers = [ '127.0.0.1:11211' ];
 
 /**
  * Use persistent connections to MemCached, which are shared across multiple
@@ -1580,87 +2466,97 @@ $wgMemCachedPersistent = false;
 /**
  * Read/write timeout for MemCached server communication, in microseconds.
  */
-$wgMemCachedTimeout = 100000;
+$wgMemCachedTimeout = 500000;
 
 /**
- * Set this to true to make a local copy of the message cache, for use in
- * addition to memcached. The files will be put in $wgCacheDirectory.
+ * Set this to true to maintain a copy of the message cache on the local server.
+ *
+ * This layer of message cache is in addition to the one configured by $wgMessageCacheType.
+ *
+ * The local copy is put in APC. If APC is not installed, this setting does nothing.
+ *
+ * Note that this is about the message cache, which stores interface messages
+ * maintained as wiki pages. This is separate from the localisation cache for interface
+ * messages provided by the software, which is configured by $wgLocalisationCacheConf.
  */
 $wgUseLocalMessageCache = false;
 
 /**
- * Defines format of local cache
- * true - Serialized object
- * false - PHP source file (Warning - security risk)
- */
-$wgLocalMessageCacheSerialized = true;
-
-/**
- * Instead of caching everything, keep track which messages are requested and
- * load only most used messages. This only makes sense if there is lots of
- * interface messages customised in the wiki (like hundreds in many languages).
+ * Instead of caching everything, only cache those messages which have
+ * been customised in the site content language. This means that
+ * MediaWiki:Foo/ja is ignored if MediaWiki:Foo doesn't exist.
+ * This option is probably only useful for translatewiki.net.
  */
 $wgAdaptiveMessageCache = false;
 
 /**
  * Localisation cache configuration. Associative array with keys:
- *     class:       The class to use. May be overridden by extensions.
+ * class:       The class to use. May be overridden by extensions.
  *
- *     store:       The location to store cache data. May be 'files', 'db' or
- *                  'detect'. If set to "files", data will be in CDB files. If set
- *                  to "db", data will be stored to the database. If set to
- *                  "detect", files will be used if $wgCacheDirectory is set,
- *                  otherwise the database will be used.
+ * store:       The location to store cache data. May be 'files', 'array', 'db' or
+ *              'detect'. If set to "files", data will be in CDB files. If set
+ *              to "db", data will be stored to the database. If set to
+ *              "detect", files will be used if $wgCacheDirectory is set,
+ *              otherwise the database will be used.
+ *              "array" is an experimental option that uses PHP files that
+ *              store static arrays.
  *
- *     storeClass:  The class name for the underlying storage. If set to a class
- *                  name, it overrides the "store" setting.
+ * storeClass:  The class name for the underlying storage. If set to a class
+ *              name, it overrides the "store" setting.
  *
- *     storeDirectory:  If the store class puts its data in files, this is the
- *                      directory it will use. If this is false, $wgCacheDirectory
- *                      will be used.
+ * storeDirectory:  If the store class puts its data in files, this is the
+ *                  directory it will use. If this is false, $wgCacheDirectory
+ *                  will be used.
  *
- *     manualRecache:   Set this to true to disable cache updates on web requests.
- *                      Use maintenance/rebuildLocalisationCache.php instead.
+ * manualRecache:   Set this to true to disable cache updates on web requests.
+ *                  Use maintenance/rebuildLocalisationCache.php instead.
  */
-$wgLocalisationCacheConf = array(
-	'class' => 'LocalisationCache',
+$wgLocalisationCacheConf = [
+	'class' => LocalisationCache::class,
 	'store' => 'detect',
 	'storeClass' => false,
 	'storeDirectory' => false,
 	'manualRecache' => false,
-);
+];
 
-/** Allow client-side caching of pages */
-$wgCachePages       = true;
+/**
+ * Allow client-side caching of pages
+ */
+$wgCachePages = true;
 
 /**
  * Set this to current time to invalidate all prior cached pages. Affects both
- * client- and server-side caching.
+ * client-side and server-side caching.
  * You can get the current date on your server by using the command:
+ * @verbatim
  *   date +%Y%m%d%H%M%S
+ * @endverbatim
  */
 $wgCacheEpoch = '20030516000000';
 
 /**
+ * Directory where GitInfo will look for pre-computed cache files. If false,
+ * $wgCacheDirectory/gitinfo will be used.
+ */
+$wgGitInfoCacheDirectory = false;
+
+/**
  * Bump this number when changing the global style sheets and JavaScript.
+ *
  * It should be appended in the query string of static CSS and JS includes,
  * to ensure that client-side caches do not keep obsolete copies of global
  * styles.
+ *
+ * @deprecated since 1.31
  */
 $wgStyleVersion = '303';
 
 /**
  * This will cache static pages for non-logged-in users to reduce
- * database traffic on public sites.
- * Must set $wgShowIPinHeader = false
+ * database traffic on public sites. ResourceLoader requests to default
+ * language and skins are cached as well as single module requests.
  */
 $wgUseFileCache = false;
-
-/**
- * Directory where the cached page will be saved.
- * Defaults to "$wgCacheDirectory/html".
- */
-$wgFileCacheDirectory = false;
 
 /**
  * Depth of the subdirectory hierarchy to be created under
@@ -1671,13 +2567,8 @@ $wgFileCacheDirectory = false;
 $wgFileCacheDepth = 2;
 
 /**
- * Keep parsed pages in a cache (objectcache table or memcached)
- * to speed up output of the same page viewed by another user with the
- * same options.
- *
- * This can provide a significant speedup for medium to large pages,
- * so you probably want to keep it on. Extensions that conflict with the
- * parser cache should disable the cache on a per-page basis instead.
+ * Kept for extension compatibility; see $wgParserCacheType
+ * @deprecated since 1.26
  */
 $wgEnableParserCache = true;
 
@@ -1706,20 +2597,13 @@ $wgSidebarCacheExpiry = 86400;
 /**
  * When using the file cache, we can store the cached HTML gzipped to save disk
  * space. Pages will then also be served compressed to clients that support it.
- * THIS IS NOT COMPATIBLE with ob_gzhandler which is now enabled if supported in
- * the default LocalSettings.php! If you enable this, remove that setting first.
  *
  * Requires zlib support enabled in PHP.
  */
 $wgUseGzip = false;
 
 /**
- * Whether MediaWiki should send an ETag header. Seems to cause
- * broken behavior with Squid 2.6, see bug 7098.
- */
-$wgUseETag = false;
-
-/** Clock skew or the one-second resolution of time() can occasionally cause cache
+ * Clock skew or the one-second resolution of time() can occasionally cause cache
  * problems when the user requests two pages within a short period of time. This
  * variable adds a given number of seconds to vulnerable timestamps, thereby giving
  * a grace period.
@@ -1737,51 +2621,119 @@ $wgClockSkewFudge = 5;
  */
 $wgInvalidateCacheOnLocalSettingsChange = true;
 
+/**
+ * When loading extensions through the extension registration system, this
+ * can be used to invalidate the cache. A good idea would be to set this to
+ * one file, you can just `touch` that one to invalidate the cache
+ *
+ * @par Example:
+ * @code
+ * $wgExtensionInfoMtime = filemtime( "$IP/LocalSettings.php" );
+ * @endcode
+ *
+ * If set to false, the mtime for each individual JSON file will be checked,
+ * which can be slow if a large number of extensions are being loaded.
+ *
+ * @var int|bool
+ */
+$wgExtensionInfoMTime = false;
+
 /** @} */ # end of cache settings
 
 /************************************************************************//**
- * @name   HTTP proxy (Squid) settings
+ * @name   HTTP proxy (CDN) settings
  *
  * Many of these settings apply to any HTTP proxy used in front of MediaWiki,
  * although they are referred to as Squid settings for historical reasons.
  *
  * Achieving a high hit ratio with an HTTP proxy requires special
- * configuration. See http://www.mediawiki.org/wiki/Manual:Squid_caching for
+ * configuration. See https://www.mediawiki.org/wiki/Manual:Squid_caching for
  * more details.
  *
  * @{
  */
 
 /**
- * Enable/disable Squid.
- * See http://www.mediawiki.org/wiki/Manual:Squid_caching
+ * Enable/disable CDN.
+ * See https://www.mediawiki.org/wiki/Manual:Squid_caching
  */
 $wgUseSquid = false;
 
-/** If you run Squid3 with ESI support, enable this (default:false): */
+/**
+ * If you run Squid3 with ESI support, enable this (default:false):
+ */
 $wgUseESI = false;
 
-/** Send X-Vary-Options header for better caching (requires patched Squid) */
-$wgUseXVO = false;
+/**
+ * Send the Key HTTP header for better caching.
+ * See https://datatracker.ietf.org/doc/draft-fielding-http-key/ for details.
+ * @since 1.27
+ */
+$wgUseKeyHeader = false;
 
 /**
- * Internal server name as known to Squid, if different. Example:
- * <code>
+ * Add X-Forwarded-Proto to the Vary and Key headers for API requests and
+ * RSS/Atom feeds. Use this if you have an SSL termination setup
+ * and need to split the cache between HTTP and HTTPS for API requests,
+ * feed requests and HTTP redirect responses in order to prevent cache
+ * pollution. This does not affect 'normal' requests to index.php other than
+ * HTTP redirects.
+ */
+$wgVaryOnXFP = false;
+
+/**
+ * Internal server name as known to CDN, if different.
+ *
+ * @par Example:
+ * @code
  * $wgInternalServer = 'http://yourinternal.tld:8000';
- * </code>
+ * @endcode
  */
 $wgInternalServer = false;
 
 /**
- * Cache timeout for the squid, will be sent as s-maxage (without ESI) or
- * Surrogate-Control (with ESI). Without ESI, you should strip out s-maxage in
- * the Squid config. 18000 seconds = 5 hours, more cache hits with 2678400 = 31
- * days
+ * Cache TTL for the CDN sent as s-maxage (without ESI) or
+ * Surrogate-Control (with ESI). Without ESI, you should strip
+ * out s-maxage in the CDN config.
+ *
+ * 18000 seconds = 5 hours, more cache hits with 2678400 = 31 days.
  */
 $wgSquidMaxage = 18000;
 
 /**
+ * Cache timeout for the CDN when DB replica DB lag is high
+ * @see $wgSquidMaxage
+ * @since 1.27
+ */
+$wgCdnMaxageLagged = 30;
+
+/**
+ * If set, any SquidPurge call on a URL or URLs will send a second purge no less than
+ * this many seconds later via the job queue. This requires delayed job support.
+ * This should be safely higher than the 'max lag' value in $wgLBFactoryConf, so that
+ * replica DB lag does not cause page to be stuck in stales states in CDN.
+ *
+ * This also fixes race conditions in two-tiered CDN setups (e.g. cdn2 => cdn1 => MediaWiki).
+ * If a purge for a URL reaches cdn2 before cdn1 and a request reaches cdn2 for that URL,
+ * it will populate the response from the stale cdn1 value. When cdn1 gets the purge, cdn2
+ * will still be stale. If the rebound purge delay is safely higher than the time to relay
+ * a purge to all nodes, then the rebound puge will clear cdn2 after cdn1 was cleared.
+ *
+ * @since 1.27
+ */
+$wgCdnReboundPurgeDelay = 0;
+
+/**
+ * Cache timeout for the CDN when a response is known to be wrong or incomplete (due to load)
+ * @see $wgSquidMaxage
+ * @since 1.27
+ */
+$wgCdnMaxageSubstitute = 60;
+
+/**
  * Default maximum age for raw CSS/JS accesses
+ *
+ * 300 seconds = 5 minutes.
  */
 $wgForcedRawSMaxage = 300;
 
@@ -1793,38 +2745,99 @@ $wgForcedRawSMaxage = 300;
  *
  * For a list of trusted servers which *aren't* purged, see $wgSquidServersNoPurge.
  */
-$wgSquidServers = array();
+$wgSquidServers = [];
 
 /**
  * As above, except these servers aren't purged on page changes; use to set a
- * list of trusted proxies, etc.
+ * list of trusted proxies, etc. Supports both individual IP addresses and
+ * CIDR blocks.
+ * @since 1.23 Supports CIDR ranges
  */
-$wgSquidServersNoPurge = array();
-
-/** Maximum number of titles to purge in any one client operation */
-$wgMaxSquidPurgeTitles = 400;
+$wgSquidServersNoPurge = [];
 
 /**
- * HTCP multicast address. Set this to a multicast IP address to enable HTCP.
+ * Whether to use a Host header in purge requests sent to the proxy servers
+ * configured in $wgSquidServers. Set this to false to support Squid
+ * configured in forward-proxy mode.
  *
- * Note that MediaWiki uses the old non-RFC compliant HTCP format, which was
- * present in the earliest Squid implementations of the protocol.
+ * If this is set to true, a Host header will be sent, and only the path
+ * component of the URL will appear on the request line, as if the request
+ * were a non-proxy HTTP 1.1 request. Varnish only supports this style of
+ * request. Squid supports this style of request only if reverse-proxy mode
+ * (http_port ... accel) is enabled.
+ *
+ * If this is set to false, no Host header will be sent, and the absolute URL
+ * will be sent in the request line, as is the standard for an HTTP proxy
+ * request in both HTTP 1.0 and 1.1. This style of request is not supported
+ * by Varnish, but is supported by Squid in either configuration (forward or
+ * reverse).
+ *
+ * @since 1.21
  */
-$wgHTCPMulticastAddress = false;
+$wgSquidPurgeUseHostHeader = true;
 
 /**
- * HTCP multicast port.
- * @see $wgHTCPMulticastAddress
+ * Routing configuration for HTCP multicast purging. Add elements here to
+ * enable HTCP and determine which purges are sent where. If set to an empty
+ * array, HTCP is disabled.
+ *
+ * Each key in this array is a regular expression to match against the purged
+ * URL, or an empty string to match all URLs. The purged URL is matched against
+ * the regexes in the order specified, and the first rule whose regex matches
+ * is used, all remaining rules will thus be ignored.
+ *
+ * @par Example configuration to send purges for upload.wikimedia.org to one
+ * multicast group and all other purges to another:
+ * @code
+ * $wgHTCPRouting = [
+ *         '|^https?://upload\.wikimedia\.org|' => [
+ *                 'host' => '239.128.0.113',
+ *                 'port' => 4827,
+ *         ],
+ *         '' => [
+ *                 'host' => '239.128.0.112',
+ *                 'port' => 4827,
+ *         ],
+ * ];
+ * @endcode
+ *
+ * You can also pass an array of hosts to send purges too. This is useful when
+ * you have several multicast groups or unicast address that should receive a
+ * given purge.  Multiple hosts support was introduced in MediaWiki 1.22.
+ *
+ * @par Example of sending purges to multiple hosts:
+ * @code
+ * $wgHTCPRouting = [
+ *     '' => [
+ *         // Purges to text caches using multicast
+ *         [ 'host' => '239.128.0.114', 'port' => '4827' ],
+ *         // Purges to a hardcoded list of caches
+ *         [ 'host' => '10.88.66.1', 'port' => '4827' ],
+ *         [ 'host' => '10.88.66.2', 'port' => '4827' ],
+ *         [ 'host' => '10.88.66.3', 'port' => '4827' ],
+ *     ],
+ * ];
+ * @endcode
+ *
+ * @since 1.22
+ *
+ * $wgHTCPRouting replaces $wgHTCPMulticastRouting that was introduced in 1.20.
+ * For back compatibility purposes, whenever its array is empty
+ * $wgHTCPMutlicastRouting will be used as a fallback if it not null.
+ *
+ * @see $wgHTCPMulticastTTL
  */
-$wgHTCPPort = 4827;
+$wgHTCPRouting = [];
 
 /**
  * HTCP multicast TTL.
- * @see $wgHTCPMulticastAddress
+ * @see $wgHTCPRouting
  */
 $wgHTCPMulticastTTL = 1;
 
-/** Should forwarded Private IPs be accepted? */
+/**
+ * Should forwarded Private IPs be accepted?
+ */
 $wgUsePrivateIPs = false;
 
 /** @} */ # end of HTTP proxy settings
@@ -1834,53 +2847,97 @@ $wgUsePrivateIPs = false;
  * @{
  */
 
-/** Site language code, should be one of ./languages/Language(.*).php */
+/**
+ * Site language code. See languages/data/Names.php for languages supported by
+ * MediaWiki out of the box. Not all languages listed there have translations,
+ * see languages/messages/ for the list of languages with some localisation.
+ *
+ * Warning: Don't use any of MediaWiki's deprecated language codes listed in
+ * LanguageCode::getDeprecatedCodeMapping or $wgDummyLanguageCodes, like "no"
+ * for Norwegian (use "nb" instead). If you do, things will break unexpectedly.
+ *
+ * This defines the default interface language for all users, but users can
+ * change it in their preferences.
+ *
+ * This also defines the language of pages in the wiki. The content is wrapped
+ * in a html element with lang=XX attribute. This behavior can be overridden
+ * via hooks, see Title::getPageLanguage.
+ */
 $wgLanguageCode = 'en';
 
 /**
- * Some languages need different word forms, usually for different cases.
- * Used in Language::convertGrammar(). Example:
- *
- * <code>
- * $wgGrammarForms['en']['genitive']['car'] = 'car\'s';
- * </code>
+ * Language cache size, or really how many languages can we handle
+ * simultaneously without degrading to crawl speed.
  */
-$wgGrammarForms = array();
+$wgLangObjCacheSize = 10;
 
-/** Treat language links as magic connectors, not inline links */
+/**
+ * Some languages need different word forms, usually for different cases.
+ * Used in Language::convertGrammar().
+ *
+ * @par Example:
+ * @code
+ * $wgGrammarForms['en']['genitive']['car'] = 'car\'s';
+ * @endcode
+ */
+$wgGrammarForms = [];
+
+/**
+ * Treat language links as magic connectors, not inline links
+ */
 $wgInterwikiMagic = true;
 
-/** Hide interlanguage links from the sidebar */
+/**
+ * Hide interlanguage links from the sidebar
+ */
 $wgHideInterlanguageLinks = false;
 
-/** List of language names or overrides for default names in Names.php */
-$wgExtraLanguageNames = array();
-
 /**
- * List of language codes that don't correspond to an actual language.
- * These codes are leftoffs from renames, or other legacy things.
- * Also, qqq is a dummy "language" for documenting messages.
+ * List of additional interwiki prefixes that should be treated as
+ * interlanguage links (i.e. placed in the sidebar).
+ * Notes:
+ * - This will not do anything unless the prefixes are defined in the interwiki
+ *   map.
+ * - The display text for these custom interlanguage links will be fetched from
+ *   the system message "interlanguage-link-xyz" where xyz is the prefix in
+ *   this array.
+ * - A friendly name for each site, used for tooltip text, may optionally be
+ *   placed in the system message "interlanguage-link-sitename-xyz" where xyz is
+ *   the prefix in this array.
  */
-$wgDummyLanguageCodes = array(
-	'als',
-	'bat-smg',
-	'be-x-old',
-	'dk',
-	'fiu-vro',
-	'iu',
-	'nb',
-	'qqq',
-	'simple',
-);
+$wgExtraInterlanguageLinkPrefixes = [];
 
 /**
- * Character set for use in the article edit box. Language-specific encodings
- * may be defined.
+ * List of language names or overrides for default names in Names.php
+ */
+$wgExtraLanguageNames = [];
+
+/**
+ * List of mappings from one language code to another.
+ * This array makes the codes not appear as a selectable language on the
+ * installer, and excludes them when running the transstat.php script.
  *
- * This historic feature is one of the first that was added by former MediaWiki
- * team leader Brion Vibber, and is used to support the Esperanto x-system.
+ * In Setup.php, the variable $wgDummyLanguageCodes is created by combining
+ * these codes with a list of "deprecated" codes, which are mostly leftovers
+ * from renames or other legacy things, and the internal codes 'qqq' and 'qqx'.
+ * If a mapping in $wgExtraLanguageCodes collide with a built-in mapping, the
+ * value in $wgExtraLanguageCodes will be used.
+ *
+ * @since 1.29
  */
-$wgEditEncoding   = '';
+$wgExtraLanguageCodes = [
+	'bh' => 'bho', // Bihari language family
+	'no' => 'nb', // Norwegian language family
+	'simple' => 'en', // Simple English
+];
+
+/**
+ * Functionally the same as $wgExtraLanguageCodes, but deprecated. Instead of
+ * appending values to this array, append them to $wgExtraLanguageCodes.
+ *
+ * @deprecated since 1.29
+ */
+$wgDummyLanguageCodes = [];
 
 /**
  * Set this to true to replace Arabic presentation forms with their standard
@@ -1921,52 +2978,16 @@ $wgAllUnicodeFixes = false;
  * converting a wiki from MediaWiki 1.4 or earlier to UTF-8 without the
  * burdensome mass conversion of old text data.
  *
- * NOTE! This DOES NOT touch any fields other than old_text.Titles, comments,
+ * @note This DOES NOT touch any fields other than old_text. Titles, comments,
  * user names, etc still must be converted en masse in the database before
  * continuing as a UTF-8 wiki.
  */
-$wgLegacyEncoding   = false;
+$wgLegacyEncoding = false;
 
 /**
- * Browser Blacklist for unicode non compliant browsers. Contains a list of
- * regexps : "/regexp/"  matching problematic browsers. These browsers will
- * be served encoded unicode in the edit box instead of real unicode.
+ * @deprecated since 1.30, does nothing
  */
-$wgBrowserBlackList = array(
-	/**
-	 * Netscape 2-4 detection
-	 * The minor version may contain strings such as "Gold" or "SGoldC-SGI"
-	 * Lots of non-netscape user agents have "compatible", so it's useful to check for that
-	 * with a negative assertion. The [UIN] identifier specifies the level of security
-	 * in a Netscape/Mozilla browser, checking for it rules out a number of fakers.
-	 * The language string is unreliable, it is missing on NS4 Mac.
-	 *
-	 * Reference: http://www.psychedelix.com/agents/index.shtml
-	 */
-	'/^Mozilla\/2\.[^ ]+ [^(]*?\((?!compatible).*; [UIN]/',
-	'/^Mozilla\/3\.[^ ]+ [^(]*?\((?!compatible).*; [UIN]/',
-	'/^Mozilla\/4\.[^ ]+ [^(]*?\((?!compatible).*; [UIN]/',
-
-	/**
-	 * MSIE on Mac OS 9 is teh sux0r, converts þ to <thorn>, ð to <eth>, Þ to <THORN> and Ð to <ETH>
-	 *
-	 * Known useragents:
-	 * - Mozilla/4.0 (compatible; MSIE 5.0; Mac_PowerPC)
-	 * - Mozilla/4.0 (compatible; MSIE 5.15; Mac_PowerPC)
-	 * - Mozilla/4.0 (compatible; MSIE 5.23; Mac_PowerPC)
-	 * - [...]
-	 *
-	 * @link http://en.wikipedia.org/w/index.php?title=User%3A%C6var_Arnfj%F6r%F0_Bjarmason%2Ftestme&diff=12356041&oldid=12355864
-	 * @link http://en.wikipedia.org/wiki/Template%3AOS9
-	 */
-	'/^Mozilla\/4\.0 \(compatible; MSIE \d+\.\d+; Mac_PowerPC\)/',
-
-	/**
-	 * Google wireless transcoder, seems to eat a lot of chars alive
-	 * http://it.wikipedia.org/w/index.php?title=Luciano_Ligabue&diff=prev&oldid=8857361
-	 */
-	'/^Mozilla\/4\.0 \(compatible; MSIE 6.0; Windows NT 5.0; Google Wireless Transcoder;\)/'
-);
+$wgBrowserBlackList = [];
 
 /**
  * If set to true, the MediaWiki 1.4 to 1.5 schema conversion will
@@ -1977,24 +2998,17 @@ $wgBrowserBlackList = array(
  * requires that the cur table be kept around for those revisions
  * to remain viewable.
  *
- * maintenance/migrateCurStubs.php can be used to complete the
- * migration in the background once the wiki is back online.
- *
  * This option affects the updaters *only*. Any present cur stub
  * revisions will be readable at runtime regardless of this setting.
  */
 $wgLegacySchemaConversion = false;
 
 /**
- * Enable to allow rewriting dates in page text.
- * DOES NOT FORMAT CORRECTLY FOR MOST LANGUAGES.
+ * Enable dates like 'May 12' instead of '12 May', if the default date format
+ * is 'dmy or mdy'.
  */
-$wgUseDynamicDates  = false;
-/**
- * Enable dates like 'May 12' instead of '12 May', this only takes effect if
- * the interface is set to English.
- */
-$wgAmericanDates    = false;
+$wgAmericanDates = false;
+
 /**
  * For Hindi and Arabic use local numerals instead of Western style (0-9)
  * numerals in interface.
@@ -2010,48 +3024,56 @@ $wgUseDatabaseMessages = true;
 /**
  * Expiry time for the message cache key
  */
-$wgMsgCacheExpiry	= 86400;
+$wgMsgCacheExpiry = 86400;
 
 /**
  * Maximum entry size in the message cache, in bytes
  */
 $wgMaxMsgCacheEntrySize = 10000;
 
-/** Whether to enable language variant conversion. */
+/**
+ * Whether to enable language variant conversion.
+ */
 $wgDisableLangConversion = false;
 
-/** Whether to enable language variant conversion for links. */
+/**
+ * Whether to enable language variant conversion for links.
+ */
 $wgDisableTitleConversion = false;
 
-/** Whether to enable cononical language links in meta data. */
-$wgCanonicalLanguageLinks = true;
-
-/** Default variant code, if false, the default will be the language code */
+/**
+ * Default variant code, if false, the default will be the language code
+ */
 $wgDefaultLanguageVariant = false;
 
 /**
- * Disabled variants array of language variant conversion. Example:
- * <code>
+ * Whether to enable the pig latin variant of English (en-x-piglatin),
+ * used to ease variant development work.
+ */
+$wgUsePigLatinVariant = false;
+
+/**
+ * Disabled variants array of language variant conversion.
+ *
+ * @par Example:
+ * @code
  *  $wgDisabledVariants[] = 'zh-mo';
  *  $wgDisabledVariants[] = 'zh-my';
- * </code>
- *
- * or:
- *
- * <code>
- *  $wgDisabledVariants = array('zh-mo', 'zh-my');
- * </code>
+ * @endcode
  */
-$wgDisabledVariants = array();
+$wgDisabledVariants = [];
 
 /**
  * Like $wgArticlePath, but on multi-variant wikis, this provides a
  * path format that describes which parts of the URL contain the
- * language variant.  For Example:
+ * language variant.
  *
- *   $wgLanguageCode = 'sr';
- *   $wgVariantArticlePath = '/$2/$1';
- *   $wgArticlePath = '/wiki/$1';
+ * @par Example:
+ * @code
+ *     $wgLanguageCode = 'sr';
+ *     $wgVariantArticlePath = '/$2/$1';
+ *     $wgArticlePath = '/wiki/$1';
+ * @endcode
  *
  * A link to /wiki/ would be redirected to /sr/Главна_страна
  *
@@ -2068,21 +3090,25 @@ $wgVariantArticlePath = false;
 $wgLoginLanguageSelector = false;
 
 /**
- * When translating messages with wfMsg(), it is not always clear what should
- * be considered UI messages and what should be content messages.
+ * When translating messages with wfMessage(), it is not always clear what
+ * should be considered UI messages and what should be content messages.
  *
  * For example, for the English Wikipedia, there should be only one 'mainpage',
  * so when getting the link for 'mainpage', we should treat it as site content
- * and call wfMsgForContent(), but for rendering the text of the link, we call
- * wfMsg(). The code behaves this way by default. However, sites like the
- * Wikimedia Commons do offer different versions of 'mainpage' and the like for
- * different languages. This array provides a way to override the default
- * behavior. For example, to allow language-specific main page and community
- * portal, set
+ * and call ->inContentLanguage()->text(), but for rendering the text of the
+ * link, we call ->text(). The code behaves this way by default. However,
+ * sites like the Wikimedia Commons do offer different versions of 'mainpage'
+ * and the like for different languages. This array provides a way to override
+ * the default behavior.
  *
- * $wgForceUIMsgAsContentMsg = array( 'mainpage', 'portal-url' );
+ * @par Example:
+ * To allow language-specific main page and community
+ * portal:
+ * @code
+ *     $wgForceUIMsgAsContentMsg = [ 'mainpage', 'portal-url' ];
+ * @endcode
  */
-$wgForceUIMsgAsContentMsg = array();
+$wgForceUIMsgAsContentMsg = [];
 
 /**
  * Fake out the timezone that the server thinks it's in. This will be used for
@@ -2095,13 +3121,17 @@ $wgForceUIMsgAsContentMsg = array();
  * Timezones can be translated by editing MediaWiki messages of type
  * timezone-nameinlowercase like timezone-utc.
  *
- * Examples:
- * <code>
+ * A list of usable timezones can found at:
+ * https://secure.php.net/manual/en/timezones.php
+ *
+ * @par Examples:
+ * @code
+ * $wgLocaltimezone = 'UTC';
  * $wgLocaltimezone = 'GMT';
  * $wgLocaltimezone = 'PST8PDT';
  * $wgLocaltimezone = 'Europe/Sweden';
  * $wgLocaltimezone = 'CET';
- * </code>
+ * @endcode
  */
 $wgLocaltimezone = null;
 
@@ -2110,19 +3140,9 @@ $wgLocaltimezone = null;
  * for anonymous users and new user accounts.
  *
  * This setting is used for most date/time displays in the software, and is
- * overrideable in user preferences. It is *not* used for signature timestamps.
+ * overridable in user preferences. It is *not* used for signature timestamps.
  *
- * You can set it to match the configured server timezone like this:
- *   $wgLocalTZoffset = date("Z") / 60;
- *
- * If your server is not configured for the timezone you want, you can set
- * this in conjunction with the signature timezone and override the PHP default
- * timezone like so:
- *   $wgLocaltimezone="Europe/Berlin";
- *   date_default_timezone_set( $wgLocaltimezone );
- *   $wgLocalTZoffset = date("Z") / 60;
- *
- * Leave at NULL to show times in universal time (UTC/GMT).
+ * By default, this will be set to match $wgLocaltimezone.
  */
 $wgLocalTZoffset = null;
 
@@ -2133,102 +3153,89 @@ $wgLocalTZoffset = null;
  * @{
  */
 
-/** The default Content-Type header. */
+/**
+ * The default Content-Type header.
+ */
 $wgMimeType = 'text/html';
 
 /**
- * The content type used in script tags.  This is mostly going to be ignored if
- * $wgHtml5 is true, at least for actual HTML output, since HTML5 doesn't
- * require a MIME type for JavaScript or CSS (those are the default script and
- * style languages).
+ * Previously used as content type in HTML script tags. This is now ignored since
+ * HTML5 doesn't require a MIME type for script tags (javascript is the default).
+ * It was also previously used by RawAction to determine the ctype query parameter
+ * value that will result in a javascript response.
+ * @deprecated since 1.22
  */
-$wgJsMimeType = 'text/javascript';
+$wgJsMimeType = null;
 
 /**
- * The HTML document type.  Ignored if $wgHtml5 is true, since <!DOCTYPE html>
- * doesn't actually have a doctype part to put this variable's contents in.
+ * The default xmlns attribute. The option to define this has been removed.
+ * The value of this variable is no longer used by core and is set to a fixed
+ * value in Setup.php for compatibility with extensions that depend on the value
+ * of this variable being set. Such a dependency however is deprecated.
+ * @deprecated since 1.22
  */
-$wgDocType = '-//W3C//DTD XHTML 1.0 Transitional//EN';
+$wgXhtmlDefaultNamespace = null;
 
 /**
- * The URL of the document type declaration.  Ignored if $wgHtml5 is true,
- * since HTML5 has no DTD, and <!DOCTYPE html> doesn't actually have a DTD part
- * to put this variable's contents in.
- */
-$wgDTD = 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd';
-
-/**
- * The default xmlns attribute.  Ignored if $wgHtml5 is true (or it's supposed
- * to be), since we don't currently support XHTML5, and in HTML5 (i.e., served
- * as text/html) the attribute has no effect, so why bother?
- */
-$wgXhtmlDefaultNamespace = 'http://www.w3.org/1999/xhtml';
-
-/**
- * Should we output an HTML5 doctype?  If false, use XHTML 1.0 Transitional
- * instead, and disable HTML5 features.  This may eventually be removed and set
- * to always true.  If it's true, a number of other settings will be irrelevant
- * and have no effect.
+ * Previously used to determine if we should output an HTML5 doctype.
+ * This is no longer used as we always output HTML5 now. For compatibility with
+ * extensions that still check the value of this config it's value is now forced
+ * to true by Setup.php.
+ * @deprecated since 1.22
  */
 $wgHtml5 = true;
 
 /**
  * Defines the value of the version attribute in the &lt;html&gt; tag, if any.
- * This is ignored if $wgHtml5 is false.  If $wgAllowRdfaAttributes and
- * $wgHtml5 are both true, and this evaluates to boolean false (like if it's
- * left at the default null value), it will be auto-initialized to the correct
- * value for RDFa+HTML5.  As such, you should have no reason to ever actually
- * set this to anything.
+ *
+ * If your wiki uses RDFa, set it to the correct value for RDFa+HTML5.
+ * Correct current values are 'HTML+RDFa 1.0' or 'XHTML+RDFa 1.0'.
+ * See also https://www.w3.org/TR/rdfa-in-html/#document-conformance
+ * @since 1.16
  */
 $wgHtml5Version = null;
 
 /**
- * Enabled RDFa attributes for use in wikitext.
- * NOTE: Interaction with HTML5 is somewhat underspecified.
+ * Temporary variable that allows HTMLForms to be rendered as tables.
+ * Table based layouts cause various issues when designing for mobile.
+ * This global allows skins or extensions a means to force non-table based rendering.
+ * Setting to false forces form components to always render as div elements.
+ * @since 1.24
  */
-$wgAllowRdfaAttributes = false;
+$wgHTMLFormAllowTableFormat = true;
 
 /**
- * Enabled HTML5 microdata attributes for use in wikitext, if $wgHtml5 is also true.
+ * Temporary variable that applies MediaWiki UI wherever it can be supported.
+ * Temporary variable that should be removed when mediawiki ui is more
+ * stable and change has been communicated.
+ * @since 1.24
  */
-$wgAllowMicrodataAttributes = false;
+$wgUseMediaWikiUIEverywhere = false;
 
 /**
- * Should we try to make our HTML output well-formed XML?  If set to false,
- * output will be a few bytes shorter, and the HTML will arguably be more
- * readable.  If set to true, life will be much easier for the authors of
- * screen-scraping bots, and the HTML will arguably be more readable.
+ * Whether to label the store-to-database-and-show-to-others button in the editor
+ * as "Save page"/"Save changes" if false (the default) or, if true, instead as
+ * "Publish page"/"Publish changes".
  *
- * Setting this to false may omit quotation marks on some attributes, omit
- * slashes from some self-closing tags, omit some ending tags, etc., where
- * permitted by HTML5.  Setting it to true will not guarantee that all pages
- * will be well-formed, although non-well-formed pages should be rare and it's
- * a bug if you find one.  Conversely, setting it to false doesn't mean that
- * all XML-y constructs will be omitted, just that they might be.
- *
- * Because of compatibility with screen-scraping bots, and because it's
- * controversial, this is currently left to true by default.
+ * @since 1.28
  */
-$wgWellFormedXml = true;
+$wgEditSubmitButtonLabelPublish = false;
 
 /**
  * Permit other namespaces in addition to the w3.org default.
- * Use the prefix for the key and the namespace for the value. For
- * example:
+ *
+ * Use the prefix for the key and the namespace for the value.
+ *
+ * @par Example:
+ * @code
  * $wgXhtmlNamespaces['svg'] = 'http://www.w3.org/2000/svg';
- * Normally we wouldn't have to define this in the root <html>
+ * @endcode
+ * Normally we wouldn't have to define this in the root "<html>"
  * element, but IE needs it there in some circumstances.
  *
- * This is ignored if $wgHtml5 is true, for the same reason as
- * $wgXhtmlDefaultNamespace.
+ * This is ignored if $wgMimeType is set to a non-XML MIME type.
  */
-$wgXhtmlNamespaces = array();
-
-/**
- * Show IP address, for non-logged in users. It's necessary to switch this off
- * for some forms of caching.
- */
-$wgShowIPinHeader	= true;
+$wgXhtmlNamespaces = [];
 
 /**
  * Site notice shown at the top of each page
@@ -2240,63 +3247,34 @@ $wgShowIPinHeader	= true;
 $wgSiteNotice = '';
 
 /**
- * A subtitle to add to the tagline, for skins that have it/
- */
-$wgExtraSubtitle	= '';
-
-/**
  * If this is set, a "donate" link will appear in the sidebar. Set it to a URL.
  */
-$wgSiteSupportPage	= '';
-
-/**
- * Validate the overall output using tidy and refuse
- * to display the page if it's not valid.
- */
-$wgValidateAllHtml = false;
+$wgSiteSupportPage = '';
 
 /**
  * Default skin, for new users and anonymous visitors. Registered users may
  * change this to any one of the other available skins in their preferences.
- * This has to be completely lowercase; see the "skins" directory for the list
- * of available skins.
  */
 $wgDefaultSkin = 'vector';
 
 /**
- * Specify the name of a skin that should not be presented in the list of
- * available skins.  Use for blacklisting a skin which you do not want to
- * remove from the .../skins/ directory
+ * Fallback skin used when the skin defined by $wgDefaultSkin can't be found.
+ *
+ * @since 1.24
+ */
+$wgFallbackSkin = 'fallback';
+
+/**
+ * Specify the names of skins that should not be presented in the list of
+ * available skins in user preferences. If you want to remove a skin entirely,
+ * remove it from the skins/ directory and its entry from LocalSettings.php.
+ */
+$wgSkipSkins = [];
+
+/**
+ * @deprecated since 1.23; use $wgSkipSkins instead
  */
 $wgSkipSkin = '';
-/** Array for more like $wgSkipSkin. */
-$wgSkipSkins = array();
-
-/**
- * Optionally, we can specify a stylesheet to use for media="handheld".
- * This is recognized by some, but not all, handheld/mobile/PDA browsers.
- * If left empty, compliant handheld browsers won't pick up the skin
- * stylesheet, which is specified for 'screen' media.
- *
- * Can be a complete URL, base-relative path, or $wgStylePath-relative path.
- * Try 'chick/main.css' to apply the Chick styles to the MonoBook HTML.
- *
- * Will also be switched in when 'handheld=yes' is added to the URL, like
- * the 'printable=yes' mode for print media.
- */
-$wgHandheldStyle = false;
-
-/**
- * If set, 'screen' and 'handheld' media specifiers for stylesheets are
- * transformed such that they apply to the iPhone/iPod Touch Mobile Safari,
- * which doesn't recognize 'handheld' but does support media queries on its
- * screen size.
- *
- * Consider only using this if you have a *really good* handheld stylesheet,
- * as iPhone users won't have any way to disable it and use the "grown-up"
- * styles instead.
- */
-$wgHandheldForIPhone = false;
 
 /**
  * Allow user Javascript page?
@@ -2313,24 +3291,22 @@ $wgAllowUserJs = false;
 $wgAllowUserCss = false;
 
 /**
- * Allow user-preferences implemented in CSS?
- * This allows users to customise the site appearance to a greater
- * degree; disabling it will improve page load times.
+ * Allow style-related user-preferences?
+ *
+ * This controls whether the `editfont` and `underline` preferences
+ * are availabe to users.
  */
 $wgAllowUserCssPrefs = true;
 
-/** Use the site's Javascript page? */
+/**
+ * Use the site's Javascript page?
+ */
 $wgUseSiteJs = true;
 
-/** Use the site's Cascading Style Sheets (CSS)? */
-$wgUseSiteCss = true;
-
 /**
- * Set to false to disable application of access keys and tooltips,
- * eg to avoid keyboard conflicts with system keys or as a low-level
- * optimization.
+ * Use the site's Cascading Style Sheets (CSS)?
  */
-$wgEnableTooltipsAndAccesskeys = true;
+$wgUseSiteCss = true;
 
 /**
  * Break out of framesets. This can be used to prevent clickjacking attacks,
@@ -2360,20 +3336,72 @@ $wgBreakFrames = false;
 $wgEditPageFrameOptions = 'DENY';
 
 /**
+ * Disallow framing of API pages directly, by setting the X-Frame-Options
+ * header. Since the API returns CSRF tokens, allowing the results to be
+ * framed can compromise your user's account security.
+ * Options are:
+ *   - 'DENY': Do not allow framing. This is recommended for most wikis.
+ *   - 'SAMEORIGIN': Allow framing by pages on the same domain.
+ *   - false: Allow all framing.
+ * Note: $wgBreakFrames will override this for human formatted API output.
+ */
+$wgApiFrameOptions = 'DENY';
+
+/**
  * Disable output compression (enabled by default if zlib is available)
  */
 $wgDisableOutputCompression = false;
 
 /**
- * Should we allow a broader set of characters in id attributes, per HTML5?  If
- * not, use only HTML 4-compatible IDs.  This option is for testing -- when the
- * functionality is ready, it will be on by default with no option.
+ * Abandoned experiment with HTML5-style ID escaping. Normalized IDs a bit
+ * too aggressively, breaking preexisting content (particularly Cite).
+ * See T29733, T29694, T29474.
  *
- * Currently this appears to work fine in all browsers, but it's disabled by
- * default because it normalizes id's a bit too aggressively, breaking preexisting
- * content (particularly Cite).  See bug 27733, bug 27694, bug 27474.
+ * @deprecated since 1.30, use $wgFragmentMode
  */
 $wgExperimentalHtmlIds = false;
+
+/**
+ * How should section IDs be encoded?
+ * This array can contain 1 or 2 elements, each of them can be one of:
+ * - 'html5'  is modern HTML5 style encoding with minimal escaping. Displays Unicode
+ *            characters in most browsers' address bars.
+ * - 'legacy' is old MediaWiki-style encoding, e.g. 啤酒 turns into .E5.95.A4.E9.85.92
+ * - 'html5-legacy' corresponds to DEPRECATED $wgExperimentalHtmlIds mode. DO NOT use
+ *            it for anything but migration off that mode (see below).
+ *
+ * The first element of this array specifies the primary mode of escaping IDs. This
+ * is what users will see when they e.g. follow an [[#internal link]] to a section of
+ * a page.
+ *
+ * The optional second element defines a fallback mode, useful for migrations.
+ * If present, it will direct MediaWiki to add empty <span>s to every section with its
+ * id attribute set to fallback encoded title so that links using the previous encoding
+ * would still work.
+ *
+ * Example: you want to migrate your wiki from 'legacy' to 'html5'
+ *
+ * On the first step, set this variable to [ 'legacy', 'html5' ]. After a while, when
+ * all caches (parser, HTTP, etc.) contain only pages generated with this setting,
+ * flip the value to [ 'html5', 'legacy' ]. This will result in all internal links being
+ * generated in the new encoding while old links (both external and cached internal) will
+ * still work. After a long time, you might want to ditch backwards compatibility and
+ * set it to [ 'html5' ]. After all, pages get edited, breaking incoming links no matter which
+ * fragment mode is used.
+ *
+ * @since 1.30
+ */
+$wgFragmentMode = [ 'legacy', 'html5' ];
+
+/**
+ * Which ID escaping mode should be used for external interwiki links? See documentation
+ * for $wgFragmentMode above for details of each mode. Because you can't control external sites,
+ * this setting should probably always be 'legacy', unless every wiki you link to has converted
+ * to 'html5'.
+ *
+ * @since 1.30
+ */
+$wgExternalInterwikiFragmentMode = 'legacy';
 
 /**
  * Abstract list of footer icons for skins in place of old copyrightico and poweredbyico code
@@ -2392,54 +3420,42 @@ $wgExperimentalHtmlIds = false;
  * The value should be either a string or an array. If it is a string it will be output
  * directly as html, however some skins may choose to ignore it. An array is the preferred format
  * for the icon, the following keys are used:
- *   src: An absolute url to the image to use for the icon, this is recommended
+ * - src: An absolute url to the image to use for the icon, this is recommended
  *        but not required, however some skins will ignore icons without an image
- *   url: The url to use in the <a> arround the text or icon, if not set an <a> will not be outputted
- *   alt: This is the text form of the icon, it will be displayed without an image in
+ * - srcset: optional additional-resolution images; see HTML5 specs
+ * - url: The url to use in the a element around the text or icon, if not set an a element will
+ *        not be outputted
+ * - alt: This is the text form of the icon, it will be displayed without an image in
  *        skins like Modern or if src is not set, and will otherwise be used as
  *        the alt="" for the image. This key is required.
- *   width and height: If the icon specified by src is not of the standard size
+ * - width and height: If the icon specified by src is not of the standard size
  *                     you can specify the size of image to use with these keys.
  *                     Otherwise they will default to the standard 88x31.
+ * @todo Reformat documentation.
  */
-$wgFooterIcons = array(
-	"copyright" => array(
-		"copyright" => array(), // placeholder for the built in copyright icon
-	),
-	"poweredby" => array(
-		"mediawiki" => array(
-			"src" => null, // Defaults to "$wgStylePath/common/images/poweredby_mediawiki_88x31.png"
-			"url" => "http://www.mediawiki.org/",
+$wgFooterIcons = [
+	"copyright" => [
+		"copyright" => [], // placeholder for the built in copyright icon
+	],
+	"poweredby" => [
+		"mediawiki" => [
+			// Defaults to point at
+			// "$wgResourceBasePath/resources/assets/poweredby_mediawiki_88x31.png"
+			// plus srcset for 1.5x, 2x resolution variants.
+			"src" => null,
+			"url" => "//www.mediawiki.org/",
 			"alt" => "Powered by MediaWiki",
-		)
-	),
-);
+		]
+	],
+];
 
 /**
- * Login / create account link behavior when it's possible for anonymous users to create an account
- * true = use a combined login / create account link
- * false = split login and create account into two separate links
+ * Login / create account link behavior when it's possible for anonymous users
+ * to create an account.
+ *  - true = use a combined login / create account link
+ *  - false = split login and create account into two separate links
  */
-$wgUseCombinedLoginLink = true;
-
-/**
- * Search form behavior for Vector skin only
- * true = use an icon search button
- * false = use Go & Search buttons
- */
-$wgVectorUseSimpleSearch = false;
-
-/**
- * Watch and unwatch as an icon rather than a link for Vector skin only
- * true = use an icon watch/unwatch button
- * false = use watch/unwatch text link
- */
-$wgVectorUseIconWatch = false;
-
-/**
- * Show the name of the current variant as a label in the variants drop-down menu
- */
-$wgVectorShowVariantName = false;
+$wgUseCombinedLoginLink = false;
 
 /**
  * Display user edit counts in various prominent places.
@@ -2447,98 +3463,246 @@ $wgVectorShowVariantName = false;
 $wgEdititis = false;
 
 /**
- * Experimental better directionality support.
+ * Some web hosts attempt to rewrite all responses with a 404 (not found)
+ * status code, mangling or hiding MediaWiki's output. If you are using such a
+ * host, you should start looking for a better one. While you're doing that,
+ * set this to false to convert some of MediaWiki's 404 responses to 200 so
+ * that the generated error pages can be seen.
+ *
+ * In cases where for technical reasons it is more important for MediaWiki to
+ * send the correct status code than for the body to be transmitted intact,
+ * this configuration variable is ignored.
  */
-$wgBetterDirectionality = false;
+$wgSend404Code = true;
 
+/**
+ * The $wgShowRollbackEditCount variable is used to show how many edits can be rolled back.
+ * The numeric value of the variable controls how many edits MediaWiki will look back to
+ * determine whether a rollback is allowed (by checking that they are all from the same author).
+ * If the value is false or 0, the edits are not counted. Disabling this will prevent MediaWiki
+ * from hiding some useless rollback links.
+ *
+ * @since 1.20
+ */
+$wgShowRollbackEditCount = 10;
+
+/**
+ * Output a <link rel="canonical"> tag on every page indicating the canonical
+ * server which should be used, i.e. $wgServer or $wgCanonicalServer. Since
+ * detection of the current server is unreliable, the link is sent
+ * unconditionally.
+ */
+$wgEnableCanonicalServerLink = false;
+
+/**
+ * When OutputHandler is used, mangle any output that contains
+ * <cross-domain-policy>. Without this, an attacker can send their own
+ * cross-domain policy unless it is prevented by the crossdomain.xml file at
+ * the domain root.
+ *
+ * @since 1.25
+ */
+$wgMangleFlashPolicy = true;
 
 /** @} */ # End of output format settings }
 
 /*************************************************************************//**
- * @name   Resource loader settings
+ * @name   ResourceLoader settings
  * @{
  */
 
 /**
- * Client-side resource modules. Extensions should add their module definitions
- * here.
+ * Client-side resource modules.
  *
- * Example:
- *   $wgResourceModules['ext.myExtension'] = array(
+ * Extensions should add their ResourceLoader module definitions
+ * to the $wgResourceModules variable.
+ *
+ * @par Example:
+ * @code
+ *   $wgResourceModules['ext.myExtension'] = [
  *      'scripts' => 'myExtension.js',
  *      'styles' => 'myExtension.css',
- *      'dependencies' => array( 'jquery.cookie', 'jquery.tabIndex' ),
- *      'localBasePath' => dirname( __FILE__ ),
+ *      'dependencies' => [ 'jquery.cookie', 'jquery.tabIndex' ],
+ *      'localBasePath' => __DIR__,
  *      'remoteExtPath' => 'MyExtension',
- *   );
+ *   ];
+ * @endcode
  */
-$wgResourceModules = array();
+$wgResourceModules = [];
 
 /**
- * Maximum time in seconds to cache resources served by the resource loader
+ * Skin-specific styles for resource modules.
+ *
+ * These are later added to the 'skinStyles' list of the existing module. The 'styles' list can
+ * not be modified or disabled.
+ *
+ * For example, here is a module "bar" and how skin Foo would provide additional styles for it.
+ *
+ * @par Example:
+ * @code
+ *   $wgResourceModules['bar'] = [
+ *     'scripts' => 'resources/bar/bar.js',
+ *     'styles' => 'resources/bar/main.css',
+ *   ];
+ *
+ *   $wgResourceModuleSkinStyles['foo'] = [
+ *     'bar' => 'skins/Foo/bar.css',
+ *   ];
+ * @endcode
+ *
+ * This is mostly equivalent to:
+ *
+ * @par Equivalent:
+ * @code
+ *   $wgResourceModules['bar'] = [
+ *     'scripts' => 'resources/bar/bar.js',
+ *     'styles' => 'resources/bar/main.css',
+ *     'skinStyles' => [
+ *       'foo' => skins/Foo/bar.css',
+ *     ],
+ *   ];
+ * @endcode
+ *
+ * If the module already defines its own entry in `skinStyles` for a given skin, then
+ * $wgResourceModuleSkinStyles is ignored.
+ *
+ * If a module defines a `skinStyles['default']` the skin may want to extend that instead
+ * of replacing them. This can be done using the `+` prefix.
+ *
+ * @par Example:
+ * @code
+ *   $wgResourceModules['bar'] = [
+ *     'scripts' => 'resources/bar/bar.js',
+ *     'styles' => 'resources/bar/basic.css',
+ *     'skinStyles' => [
+ *      'default' => 'resources/bar/additional.css',
+ *     ],
+ *   ];
+ *   // Note the '+' character:
+ *   $wgResourceModuleSkinStyles['foo'] = [
+ *     '+bar' => 'skins/Foo/bar.css',
+ *   ];
+ * @endcode
+ *
+ * This is mostly equivalent to:
+ *
+ * @par Equivalent:
+ * @code
+ *   $wgResourceModules['bar'] = [
+ *     'scripts' => 'resources/bar/bar.js',
+ *     'styles' => 'resources/bar/basic.css',
+ *     'skinStyles' => [
+ *       'default' => 'resources/bar/additional.css',
+ *       'foo' => [
+ *         'resources/bar/additional.css',
+ *         'skins/Foo/bar.css',
+ *       ],
+ *     ],
+ *   ];
+ * @endcode
+ *
+ * In other words, as a module author, use the `styles` list for stylesheets that may not be
+ * disabled by a skin. To provide default styles that may be extended or replaced,
+ * use `skinStyles['default']`.
+ *
+ * As with $wgResourceModules, paths default to being relative to the MediaWiki root.
+ * You should always provide a localBasePath and remoteBasePath (or remoteExtPath/remoteSkinPath).
+ *
+ * @par Example:
+ * @code
+ *   $wgResourceModuleSkinStyles['foo'] = [
+ *     'bar' => 'bar.css',
+ *     'quux' => 'quux.css',
+ *     'remoteSkinPath' => 'Foo',
+ *     'localBasePath' => __DIR__,
+ *   ];
+ * @endcode
  */
-$wgResourceLoaderMaxage = array(
-	'versioned' => array(
-		// Squid/Varnish but also any other public proxy cache between the client and MediaWiki
+$wgResourceModuleSkinStyles = [];
+
+/**
+ * Extensions should register foreign module sources here. 'local' is a
+ * built-in source that is not in this array, but defined by
+ * ResourceLoader::__construct() so that it cannot be unset.
+ *
+ * @par Example:
+ * @code
+ *   $wgResourceLoaderSources['foo'] = 'http://example.org/w/load.php';
+ * @endcode
+ */
+$wgResourceLoaderSources = [];
+
+/**
+ * The default 'remoteBasePath' value for instances of ResourceLoaderFileModule.
+ * Defaults to $wgScriptPath.
+ */
+$wgResourceBasePath = null;
+
+/**
+ * Maximum time in seconds to cache resources served by ResourceLoader.
+ * Used to set last modified headers (max-age/s-maxage).
+ *
+ * Following options to distinguish:
+ * - versioned: Used for modules with a version, because changing version
+ *   numbers causes cache misses. This normally has a long expiry time.
+ * - unversioned: Used for modules without a version to propagate changes
+ *   quickly to clients. Also used for modules with errors to recover quickly.
+ *   This normally has a short expiry time.
+ *
+ * Expiry time for the options to distinguish:
+ * - server: Squid/Varnish but also any other public proxy cache between the
+ *   client and MediaWiki.
+ * - client: On the client side (e.g. in the browser cache).
+ */
+$wgResourceLoaderMaxage = [
+	'versioned' => [
 		'server' => 30 * 24 * 60 * 60, // 30 days
-		// On the client side (e.g. in the browser cache).
 		'client' => 30 * 24 * 60 * 60, // 30 days
-	),
-	'unversioned' => array(
+	],
+	'unversioned' => [
 		'server' => 5 * 60, // 5 minutes
 		'client' => 5 * 60, // 5 minutes
-	),
-);
+	],
+];
 
 /**
- * Whether to embed private modules inline with HTML output or to bypass
- * caching and check the user parameter against $wgUser to prevent
- * unauthorized access to private modules.
- */
-$wgResourceLoaderInlinePrivateModules = true;
-
-/**
- * The default debug mode (on/off) for of ResourceLoader requests. This will still
- * be overridden when the debug URL parameter is used.
+ * The default debug mode (on/off) for of ResourceLoader requests.
+ *
+ * This will still be overridden when the debug URL parameter is used.
  */
 $wgResourceLoaderDebug = false;
 
 /**
- * Enable embedding of certain resources using Edge Side Includes. This will
- * improve performance but only works if there is something in front of the
- * web server (e..g a Squid or Varnish server) configured to process the ESI.
+ * Whether to ensure the mediawiki.legacy library is loaded before other modules.
+ *
+ * @deprecated since 1.26: Always declare dependencies.
  */
-$wgResourceLoaderUseESI = false;
+$wgIncludeLegacyJavaScript = false;
 
 /**
- * Put each statement on its own line when minifying JavaScript. This makes
- * debugging in non-debug mode a bit easier.
- */
-$wgResourceLoaderMinifierStatementsOnOwnLine = false;
-
-/**
- * Maximum line length when minifying JavaScript. This is not a hard maximum:
- * the minifier will try not to produce lines longer than this, but may be
- * forced to do so in certain cases.
- */
-$wgResourceLoaderMinifierMaxLineLength = 1000;
-
-/**
- * Whether to include the mediawiki.legacy JS library (old wikibits.js), and its
- * dependencies
- */
-$wgIncludeLegacyJavaScript = true;
-
-/**
- * Whether or not to assing configuration variables to the global window object.
- * If this is set to false, old code using deprecated variables like:
- * " if ( window.wgRestrictionEdit ) ..."
+ * Whether or not to assign configuration variables to the global window object.
+ *
+ * If this is set to false, old code using deprecated variables will no longer
+ * work.
+ *
+ * @par Example of legacy code:
+ * @code{,js}
+ *     if ( window.wgRestrictionEdit ) { ... }
+ * @endcode
  * or:
- * " if ( wgIsArticle ) ..."
- * will no longer work and needs to use mw.config instead. For example:
- * " if ( mw.config.exists('wgRestrictionEdit') )"
- * or
- * " if ( mw.config.get('wgIsArticle') )".
+ * @code{,js}
+ *     if ( wgIsArticle ) { ... }
+ * @endcode
+ *
+ * Instead, one needs to use mw.config.
+ * @par Example using mw.config global configuration:
+ * @code{,js}
+ *     if ( mw.config.exists('wgRestrictionEdit') ) { ... }
+ * @endcode
+ * or:
+ * @code{,js}
+ *     if ( mw.config.get('wgIsArticle') ) { ... }
+ * @endcode
  */
 $wgLegacyJavaScriptGlobals = true;
 
@@ -2552,11 +3716,107 @@ $wgLegacyJavaScriptGlobals = true;
  *
  * If set to a negative number, ResourceLoader will assume there is no query
  * string length limit.
+ *
+ * Defaults to a value based on php configuration.
  */
-$wgResourceLoaderMaxQueryLength = -1;
+$wgResourceLoaderMaxQueryLength = false;
 
-/** @} */ # End of resource loader settings }
+/**
+ * If set to true, JavaScript modules loaded from wiki pages will be parsed
+ * prior to minification to validate it.
+ *
+ * Parse errors will result in a JS exception being thrown during module load,
+ * which avoids breaking other modules loaded in the same request.
+ */
+$wgResourceLoaderValidateJS = true;
 
+/**
+ * If set to true, statically-sourced (file-backed) JavaScript resources will
+ * be parsed for validity before being bundled up into ResourceLoader modules.
+ *
+ * This can be helpful for development by providing better error messages in
+ * default (non-debug) mode, but JavaScript parsing is slow and memory hungry
+ * and may fail on large pre-bundled frameworks.
+ */
+$wgResourceLoaderValidateStaticJS = false;
+
+/**
+ * Global LESS variables. An associative array binding variable names to
+ * LESS code snippets representing their values.
+ *
+ * Adding an item here is equivalent to writing `@variable: value;`
+ * at the beginning of all your .less files, with all the consequences.
+ * In particular, string values must be escaped and quoted.
+ *
+ * Changes to this configuration do NOT trigger cache invalidation.
+ *
+ * @par Example:
+ * @code
+ *   $wgResourceLoaderLESSVars = [
+ *     'exampleFontSize'  => '1em',
+ *     'exampleBlue' => '#36c',
+ *   ];
+ * @endcode
+ * @since 1.22
+ * @deprecated since 1.30 Use ResourceLoaderModule::getLessVars() instead to
+ *  add variables to individual modules that need them.
+ */
+$wgResourceLoaderLESSVars = [
+	/**
+	 * Minimum available screen width at which a device can be considered a tablet
+	 * The number is currently based on the device width of a Samsung Galaxy S5 mini and is low
+	 * enough to cover iPad (768px). Number is prone to change with new information.
+	 * @since 1.27
+	 * @deprecated 1.31 Use mediawiki.ui/variables instead
+	 */
+	'deviceWidthTablet' => '720px',
+];
+
+/**
+ * Default import paths for LESS modules. LESS files referenced in @import
+ * statements will be looked up here first, and relative to the importing file
+ * second. To avoid collisions, it's important for the LESS files in these
+ * directories to have a common, predictable file name prefix.
+ *
+ * Extensions need not (and should not) register paths in
+ * $wgResourceLoaderLESSImportPaths. The import path includes the path of the
+ * currently compiling LESS file, which allows each extension to freely import
+ * files from its own tree.
+ *
+ * @since 1.22
+ */
+$wgResourceLoaderLESSImportPaths = [
+	"$IP/resources/src/mediawiki.less/",
+];
+
+/**
+ * Whether ResourceLoader should attempt to persist modules in localStorage on
+ * browsers that support the Web Storage API.
+ */
+$wgResourceLoaderStorageEnabled = true;
+
+/**
+ * Cache version for client-side ResourceLoader module storage. You can trigger
+ * invalidation of the contents of the module store by incrementing this value.
+ *
+ * @since 1.23
+ */
+$wgResourceLoaderStorageVersion = 1;
+
+/**
+ * Whether to allow site-wide CSS (MediaWiki:Common.css and friends) on
+ * restricted pages like Special:UserLogin or Special:Preferences where
+ * JavaScript is disabled for security reasons. As it is possible to
+ * execute JavaScript through CSS, setting this to true opens up a
+ * potential security hole. Some sites may "skin" their wiki by using
+ * site-wide CSS, causing restricted pages to look unstyled and different
+ * from the rest of the site.
+ *
+ * @since 1.25
+ */
+$wgAllowSiteCSSOnRestrictedPages = false;
+
+/** @} */ # End of ResourceLoader settings }
 
 /*************************************************************************//**
  * @name   Page title and interwiki link settings
@@ -2567,7 +3827,7 @@ $wgResourceLoaderMaxQueryLength = -1;
  * Name of the project namespace. If left set to false, $wgSitename will be
  * used instead.
  */
-$wgMetaNamespace    = false;
+$wgMetaNamespace = false;
 
 /**
  * Name of the project talk namespace.
@@ -2582,39 +3842,57 @@ $wgMetaNamespaceTalk = false;
  * Additional namespaces. If the namespaces defined in Language.php and
  * Namespace.php are insufficient, you can create new ones here, for example,
  * to import Help files in other languages. You can also override the namespace
- * names of existing namespaces. Extensions developers should use
- * $wgCanonicalNamespaceNames.
+ * names of existing namespaces. Extensions should use the CanonicalNamespaces
+ * hook or extension.json.
  *
- * PLEASE  NOTE: Once you delete a namespace, the pages in that namespace will
+ * @warning Once you delete a namespace, the pages in that namespace will
  * no longer be accessible. If you rename it, then you can access them through
  * the new namespace name.
  *
  * Custom namespaces should start at 100 to avoid conflicting with standard
  * namespaces, and should always follow the even/odd main/talk pattern.
+ *
+ * @par Example:
+ * @code
+ * $wgExtraNamespaces = [
+ *    100 => "Hilfe",
+ *    101 => "Hilfe_Diskussion",
+ *    102 => "Aide",
+ *    103 => "Discussion_Aide"
+ * ];
+ * @endcode
+ *
+ * @todo Add a note about maintenance/namespaceDupes.php
  */
-#$wgExtraNamespaces =
-#	array(100 => "Hilfe",
-#	      101 => "Hilfe_Diskussion",
-#	      102 => "Aide",
-#	      103 => "Discussion_Aide"
-#	      );
-$wgExtraNamespaces = array();
+$wgExtraNamespaces = [];
 
 /**
- * Namespace aliases
+ * Same as above, but for namespaces with gender distinction.
+ * Note: the default form for the namespace should also be set
+ * using $wgExtraNamespaces for the same index.
+ * @since 1.18
+ */
+$wgExtraGenderNamespaces = [];
+
+/**
+ * Namespace aliases.
+ *
  * These are alternate names for the primary localised namespace names, which
  * are defined by $wgExtraNamespaces and the language file. If a page is
  * requested with such a prefix, the request will be redirected to the primary
  * name.
  *
  * Set this to a map from namespace names to IDs.
- * Example:
- *    $wgNamespaceAliases = array(
+ *
+ * @par Example:
+ * @code
+ *    $wgNamespaceAliases = [
  *        'Wikipedian' => NS_USER,
  *        'Help' => 100,
- *    );
+ *    ];
+ * @endcode
  */
-$wgNamespaceAliases = array();
+$wgNamespaceAliases = [];
 
 /**
  * Allowed title characters -- regex character class
@@ -2624,11 +3902,12 @@ $wgNamespaceAliases = array();
  *   -  []{}|#    Are needed for link syntax, never enable these
  *   -  <>        Causes problems with HTML escaping, don't use
  *   -  %         Enabled by default, minor problems with path to query rewrite rules, see below
- *   -  +         Enabled by default, but doesn't work with path to query rewrite rules, corrupted by apache
+ *   -  +         Enabled by default, but doesn't work with path to query rewrite rules,
+ *                corrupted by apache
  *   -  ?         Enabled by default, but doesn't work with path to PATH_INFO rewrites
  *
- * All three of these punctuation problems can be avoided by using an alias, instead of a
- * rewrite rule of either variety.
+ * All three of these punctuation problems can be avoided by using an alias,
+ * instead of a rewrite rule of either variety.
  *
  * The problem with % is that when using a path to query rewrite rule, URLs are
  * double-unescaped: once by Apache's path conversion code, and again by PHP. So
@@ -2638,49 +3917,93 @@ $wgNamespaceAliases = array();
  * because articles can be created such that they are hard to view or edit.
  *
  * In some rare cases you may wish to remove + for compatibility with old links.
- *
- * Theoretically 0x80-0x9F of ISO 8859-1 should be disallowed, but
- * this breaks interlanguage links
  */
 $wgLegalTitleChars = " %!\"$&'()*,\\-.\\/0-9:;=?@A-Z\\\\^_`a-z~\\x80-\\xFF+";
 
 /**
  * The interwiki prefix of the current wiki, or false if it doesn't have one.
+ *
+ * @deprecated since 1.23; use $wgLocalInterwikis instead
  */
-$wgLocalInterwiki   = false;
+$wgLocalInterwiki = false;
+
+/**
+ * Array for multiple $wgLocalInterwiki values, in case there are several
+ * interwiki prefixes that point to the current wiki. If $wgLocalInterwiki is
+ * set, its value is prepended to this array, for backwards compatibility.
+ *
+ * Note, recent changes feeds use only the first entry in this array (or
+ * $wgLocalInterwiki, if it is set). See $wgRCFeeds
+ */
+$wgLocalInterwikis = [];
 
 /**
  * Expiry time for cache of interwiki table
  */
 $wgInterwikiExpiry = 10800;
 
-/** Interwiki caching settings.
-	$wgInterwikiCache specifies path to constant database file
-		This cdb database is generated by dumpInterwiki from maintenance
-		and has such key formats:
-			dbname:key - a simple key (e.g. enwiki:meta)
-			_sitename:key - site-scope key (e.g. wiktionary:meta)
-			__global:key - global-scope key (e.g. __global:meta)
-			__sites:dbname - site mapping (e.g. __sites:enwiki)
-		Sites mapping just specifies site name, other keys provide
-			"local url" data layout.
-	$wgInterwikiScopes specify number of domains to check for messages:
-		1 - Just wiki(db)-level
-		2 - wiki and global levels
-		3 - site levels
-	$wgInterwikiFallbackSite - if unable to resolve from cache
+/**
+ * @name Interwiki caching settings.
+ * @{
+ */
+
+/**
+ * Interwiki cache, either as an associative array or a path to a constant
+ * database (.cdb) file.
+ *
+ * This data structure database is generated by the `dumpInterwiki` maintenance
+ * script (which lives in the WikimediaMaintenance repository) and has key
+ * formats such as the following:
+ *
+ *  - dbname:key - a simple key (e.g. enwiki:meta)
+ *  - _sitename:key - site-scope key (e.g. wiktionary:meta)
+ *  - __global:key - global-scope key (e.g. __global:meta)
+ *  - __sites:dbname - site mapping (e.g. __sites:enwiki)
+ *
+ * Sites mapping just specifies site name, other keys provide "local url"
+ * data layout.
+ *
+ * @var bool|array|string
  */
 $wgInterwikiCache = false;
+
+/**
+ * Specify number of domains to check for messages.
+ *    - 1: Just wiki(db)-level
+ *    - 2: wiki and global levels
+ *    - 3: site levels
+ */
 $wgInterwikiScopes = 3;
+
+/**
+ * Fallback site, if unable to resolve from cache
+ */
 $wgInterwikiFallbackSite = 'wiki';
+
+/** @} */ # end of Interwiki caching settings.
+
+/**
+ * @name SiteStore caching settings.
+ * @{
+ */
+
+/**
+ * Specify the file location for the Sites json cache file.
+ */
+$wgSitesCacheFile = false;
+
+/** @} */ # end of SiteStore caching settings.
 
 /**
  * If local interwikis are set up which allow redirects,
  * set this regexp to restrict URLs which will be displayed
  * as 'redirected from' links.
  *
+ * @par Example:
  * It might look something like this:
+ * @code
  * $wgRedirectSources = '!^https?://[a-z-]+\.wikipedia\.org/!';
+ * @endcode
  *
  * Leave at false to avoid displaying any incoming redirect markers.
  * This does not affect intra-wiki redirects, which don't change
@@ -2690,7 +4013,8 @@ $wgRedirectSources = false;
 
 /**
  * Set this to false to avoid forcing the first letter of links to capitals.
- * WARNING: may break links! This makes links COMPLETELY case-sensitive. Links
+ *
+ * @warning may break links! This makes links COMPLETELY case-sensitive. Links
  * appearing with a capital at the beginning of a sentence will *not* go to the
  * same place as links in the middle of a sentence using a lowercase initial.
  */
@@ -2704,25 +4028,50 @@ $wgCapitalLinks = true;
  * associated content namespaces, the values for those are ignored in favor of the
  * subject namespace's setting. Setting for NS_MEDIA is taken automatically from
  * NS_FILE.
- * EX: $wgCapitalLinkOverrides[ NS_FILE ] = false;
+ *
+ * @par Example:
+ * @code
+ *     $wgCapitalLinkOverrides[ NS_FILE ] = false;
+ * @endcode
  */
-$wgCapitalLinkOverrides = array();
+$wgCapitalLinkOverrides = [];
 
-/** Which namespaces should support subpages?
+/**
+ * Which namespaces should support subpages?
  * See Language.php for a list of namespaces.
  */
-$wgNamespacesWithSubpages = array(
-	NS_TALK           => true,
-	NS_USER           => true,
-	NS_USER_TALK      => true,
-	NS_PROJECT_TALK   => true,
-	NS_FILE_TALK      => true,
-	NS_MEDIAWIKI      => true,
+$wgNamespacesWithSubpages = [
+	NS_TALK => true,
+	NS_USER => true,
+	NS_USER_TALK => true,
+	NS_PROJECT => true,
+	NS_PROJECT_TALK => true,
+	NS_FILE_TALK => true,
+	NS_MEDIAWIKI => true,
 	NS_MEDIAWIKI_TALK => true,
-	NS_TEMPLATE_TALK  => true,
-	NS_HELP_TALK      => true,
-	NS_CATEGORY_TALK  => true
-);
+	NS_TEMPLATE => true,
+	NS_TEMPLATE_TALK => true,
+	NS_HELP => true,
+	NS_HELP_TALK => true,
+	NS_CATEGORY_TALK => true
+];
+
+/**
+ * Array holding default tracking category names.
+ *
+ * Array contains the system messages for each tracking category.
+ * Tracking categories allow pages with certain characteristics to be tracked.
+ * It works by adding any such page to a category automatically.
+ *
+ * A message with the suffix '-desc' should be added as a description message
+ * to have extra information on Special:TrackingCategories.
+ *
+ * @deprecated since 1.25 Extensions should now register tracking categories using
+ *                        the new extension registration system.
+ *
+ * @since 1.23
+ */
+$wgTrackingCategories = [];
 
 /**
  * Array of namespaces which can be deemed to contain valid "content", as far
@@ -2730,7 +4079,24 @@ $wgNamespacesWithSubpages = array(
  * contain "content" which should be considered when generating a count of the
  * number of articles in the wiki.
  */
-$wgContentNamespaces = array( NS_MAIN );
+$wgContentNamespaces = [ NS_MAIN ];
+
+/**
+ * Optional array of namespaces which should be blacklisted from Special:ShortPages
+ * Only pages inside $wgContentNamespaces but not $wgShortPagesNamespaceBlacklist will
+ * be shown on that page.
+ * @since 1.30
+ */
+$wgShortPagesNamespaceBlacklist = [];
+
+/**
+ * Array of namespaces, in addition to the talk namespaces, where signatures
+ * (~~~~) are likely to be used. This determines whether to display the
+ * Signature button on the edit toolbar, and may also be used by extensions.
+ * For example, "traditional" style wikis, where content and discussion are
+ * intermixed, could place NS_MAIN and NS_PROJECT namespaces in this array.
+ */
+$wgExtraSignatureNamespaces = [];
 
 /**
  * Max number of redirects to follow when resolving redirects.
@@ -2744,12 +4110,12 @@ $wgMaxRedirects = 1;
  * Attempting to create a redirect to any of the pages in this array
  * will make the redirect fail.
  * Userlogout is hard-coded, so it does not need to be listed here.
- * (bug 10569) Disallow Mypage and Mytalk as well.
+ * (T12569) Disallow Mypage and Mytalk as well.
  *
  * As of now, this only checks special pages. Redirects to pages in
  * other namespaces cannot be invalidated by this variable.
  */
-$wgInvalidRedirectTargets = array( 'Filepath', 'Mypage', 'Mytalk' );
+$wgInvalidRedirectTargets = [ 'Filepath', 'Mypage', 'Mytalk', 'Redirect' ];
 
 /** @} */ # End of title and interwiki settings }
 
@@ -2765,7 +4131,7 @@ $wgInvalidRedirectTargets = array( 'Filepath', 'Mypage', 'Mytalk' );
  *  class             The class name
  *
  *  preprocessorClass The preprocessor class. Two classes are currently available:
- *                    Preprocessor_Hash, which uses plain PHP arrays for tempoarary
+ *                    Preprocessor_Hash, which uses plain PHP arrays for temporary
  *                    storage, and Preprocessor_DOM, which uses the DOM module for
  *                    temporary storage. Preprocessor_DOM generally uses less memory;
  *                    the speed of the two is roughly the same.
@@ -2780,18 +4146,32 @@ $wgInvalidRedirectTargets = array( 'Filepath', 'Mypage', 'Mytalk' );
  * changed during LocalSettings.php, in particular, it can't be changed during
  * an extension setup function.
  */
-$wgParserConf = array(
-	'class' => 'Parser',
-	#'preprocessorClass' => 'Preprocessor_Hash',
-);
+$wgParserConf = [
+	'class' => Parser::class,
+	# 'preprocessorClass' => Preprocessor_Hash::class,
+];
 
-/** Maximum indent level of toc. */
+/**
+ * Maximum indent level of toc.
+ */
 $wgMaxTocLevel = 999;
 
 /**
- * A complexity limit on template expansion
+ * A complexity limit on template expansion: the maximum number of nodes visited
+ * by PPFrame::expand()
  */
 $wgMaxPPNodeCount = 1000000;
+
+/**
+ * A complexity limit on template expansion: the maximum number of elements
+ * generated by Preprocessor::preprocessToObj(). This allows you to limit the
+ * amount of memory used by the Preprocessor_DOM node cache: testing indicates
+ * that each element uses about 160 bytes of memory on a 64-bit processor, so
+ * this default corresponds to about 155 MB.
+ *
+ * When the limit is exceeded, an exception is thrown.
+ */
+$wgMaxGeneratedPPNodeCount = 1000000;
 
 /**
  * Maximum recursion depth for templates within templates.
@@ -2801,32 +4181,36 @@ $wgMaxPPNodeCount = 1000000;
  */
 $wgMaxTemplateDepth = 40;
 
-/** @see $wgMaxTemplateDepth */
+/**
+ * @see $wgMaxTemplateDepth
+ */
 $wgMaxPPExpandDepth = 40;
 
-/** The external URL protocols */
-$wgUrlProtocols = array(
-	'http://',
-	'https://',
-	'ftp://',
-	'irc://',
-	'gopher://',
-	'telnet://', // Well if we're going to support the above.. -ævar
-	'nntp://', // @bug 3808 RFC 1738
-	'worldwind://',
-	'mailto:',
-	'news:',
-	'svn://',
-	'git://',
-	'mms://',
-);
+/**
+ * URL schemes that should be recognized as valid by wfParseUrl().
+ *
+ * WARNING: Do not add 'file:' to this or internal file links will be broken.
+ * Instead, if you want to support file links, add 'file://'. The same applies
+ * to any other protocols with the same name as a namespace. See task T46011 for
+ * more information.
+ *
+ * @see wfParseUrl
+ */
+$wgUrlProtocols = [
+	'bitcoin:', 'ftp://', 'ftps://', 'geo:', 'git://', 'gopher://', 'http://',
+	'https://', 'irc://', 'ircs://', 'magnet:', 'mailto:', 'mms://', 'news:',
+	'nntp://', 'redis://', 'sftp://', 'sip:', 'sips:', 'sms:', 'ssh://',
+	'svn://', 'tel:', 'telnet://', 'urn:', 'worldwind://', 'xmpp:', '//'
+];
 
 /**
- * If true, removes (substitutes) templates in "~~~~" signatures.
+ * If true, removes (by substituting) templates in signatures.
  */
 $wgCleanSignatures = true;
 
-/**  Whether to allow inline image pointing to other websites */
+/**
+ * Whether to allow inline image pointing to other websites
+ */
 $wgAllowExternalImages = false;
 
 /**
@@ -2835,15 +4219,16 @@ $wgAllowExternalImages = false;
  * You can use this to set up a trusted, simple repository of images.
  * You may also specify an array of strings to allow multiple sites
  *
- * Examples:
- * <code>
+ * @par Examples:
+ * @code
  * $wgAllowExternalImagesFrom = 'http://127.0.0.1/';
- * $wgAllowExternalImagesFrom = array( 'http://127.0.0.1/', 'http://example.com' );
- * </code>
+ * $wgAllowExternalImagesFrom = [ 'http://127.0.0.1/', 'http://example.com' ];
+ * @endcode
  */
 $wgAllowExternalImagesFrom = '';
 
-/** If $wgAllowExternalImages is false, you can allow an on-wiki
+/**
+ * If $wgAllowExternalImages is false, you can allow an on-wiki
  * whitelist of regular expression fragments to match the image URL
  * against. If the image matches one of the regular expression fragments,
  * The image will be displayed.
@@ -2854,7 +4239,7 @@ $wgAllowExternalImagesFrom = '';
 $wgEnableImageWhitelist = true;
 
 /**
- * A different approach to the above: simply allow the <img> tag to be used.
+ * A different approach to the above: simply allow the "<img>" tag to be used.
  * This allows you to specify alt text and other attributes, copy-paste HTML to
  * your wiki more easily, etc.  However, allowing external images in any manner
  * will allow anyone with editing rights to snoop on your visitors' IP
@@ -2864,29 +4249,60 @@ $wgEnableImageWhitelist = true;
 $wgAllowImageTag = false;
 
 /**
- * $wgUseTidy: use tidy to make sure HTML output is sane.
- * Tidy is a free tool that fixes broken HTML.
- * See http://www.w3.org/People/Raggett/tidy/
+ * Configuration for HTML postprocessing tool. Set this to a configuration
+ * array to enable an external tool. By default, we now use the RemexHtml
+ * library; historically, Dave Raggett's "HTML Tidy" was typically used.
+ * See https://www.w3.org/People/Raggett/tidy/
  *
- * - $wgTidyBin should be set to the path of the binary and
- * - $wgTidyConf to the path of the configuration file.
- * - $wgTidyOpts can include any number of parameters.
- * - $wgTidyInternal controls the use of the PECL extension to use an in-
- *   process tidy library instead of spawning a separate program.
- *   Normally you shouldn't need to override the setting except for
- *   debugging. To install, use 'pear install tidy' and add a line
- *   'extension=tidy.so' to php.ini.
+ * If this is null and $wgUseTidy is true, the deprecated configuration
+ * parameters will be used instead.
+ *
+ * If this is null and $wgUseTidy is false, a pure PHP fallback will be used.
+ *
+ * Keys are:
+ *  - driver: May be:
+ *    - RaggettInternalHHVM: Use the limited-functionality HHVM extension
+ *    - RaggettInternalPHP: Use the PECL extension
+ *    - RaggettExternal: Shell out to an external binary (tidyBin)
+ *    - Html5Depurate: Use external Depurate service
+ *    - Html5Internal: Use the Balancer library in PHP
+ *    - RemexHtml: Use the RemexHtml library in PHP
+ *
+ *  - tidyConfigFile: Path to configuration file for any of the Raggett drivers
+ *  - debugComment: True to add a comment to the output with warning messages
+ *  - tidyBin: For RaggettExternal, the path to the tidy binary.
+ *  - tidyCommandLine: For RaggettExternal, additional command line options.
+ */
+$wgTidyConfig = [ 'driver' => 'RemexHtml' ];
+
+/**
+ * Set this to true to use the deprecated tidy configuration parameters.
+ * @deprecated use $wgTidyConfig
  */
 $wgUseTidy = false;
-/** @see $wgUseTidy */
-$wgAlwaysUseTidy = false;
-/** @see $wgUseTidy */
+
+/**
+ * The path to the tidy binary.
+ * @deprecated Use $wgTidyConfig['tidyBin']
+ */
 $wgTidyBin = 'tidy';
-/** @see $wgUseTidy */
-$wgTidyConf = $IP.'/includes/tidy.conf';
-/** @see $wgUseTidy */
+
+/**
+ * The path to the tidy config file
+ * @deprecated Use $wgTidyConfig['tidyConfigFile']
+ */
+$wgTidyConf = $IP . '/includes/tidy/tidy.conf';
+
+/**
+ * The command line options to the tidy binary
+ * @deprecated Use $wgTidyConfig['tidyCommandLine']
+ */
 $wgTidyOpts = '';
-/** @see $wgUseTidy */
+
+/**
+ * Set this to true to use the tidy extension
+ * @deprecated Use $wgTidyConfig['driver']
+ */
 $wgTidyInternal = extension_loaded( 'tidy' );
 
 /**
@@ -2895,14 +4311,21 @@ $wgTidyInternal = extension_loaded( 'tidy' );
  */
 $wgDebugTidy = false;
 
-/** Allow raw, unchecked HTML in <html>...</html> sections.
- * THIS IS VERY DANGEROUS on a publically editable site, so USE wgGroupPermissions
+/**
+ * Allow raw, unchecked HTML in "<html>...</html>" sections.
+ * THIS IS VERY DANGEROUS on a publicly editable site, so USE wgGroupPermissions
  * TO RESTRICT EDITING to only those that you trust
  */
 $wgRawHtml = false;
 
 /**
- * Set a default target for external links, e.g. _blank to pop up a new window
+ * Set a default target for external links, e.g. _blank to pop up a new window.
+ *
+ * This will also set the "noreferrer" and "noopener" link rel to prevent the
+ * attack described at https://mathiasbynens.github.io/rel-noopener/ .
+ * Some older browsers may not support these link attributes, hence
+ * setting $wgExternalLinkTarget to _blank may represent a security risk
+ * to some of your users.
  */
 $wgExternalLinkTarget = false;
 
@@ -2918,20 +4341,22 @@ $wgNoFollowLinks = true;
  * Namespaces in which $wgNoFollowLinks doesn't apply.
  * See Language.php for a list of namespaces.
  */
-$wgNoFollowNsExceptions = array();
+$wgNoFollowNsExceptions = [];
 
 /**
  * If this is set to an array of domains, external links to these domain names
  * (or any subdomains) will not be set to rel="nofollow" regardless of the
  * value of $wgNoFollowLinks.  For instance:
  *
- * $wgNoFollowDomainExceptions = array( 'en.wikipedia.org', 'wiktionary.org' );
+ * $wgNoFollowDomainExceptions = [ 'en.wikipedia.org', 'wiktionary.org', 'mediawiki.org' ];
  *
  * This would add rel="nofollow" to links to de.wikipedia.org, but not
  * en.wikipedia.org, wiktionary.org, en.wiktionary.org, us.en.wikipedia.org,
  * etc.
+ *
+ * Defaults to mediawiki.org for the links included in the software by default.
  */
-$wgNoFollowDomainExceptions = array();
+$wgNoFollowDomainExceptions = [ 'mediawiki.org' ];
 
 /**
  * Allow DISPLAYTITLE to change title display
@@ -2939,8 +4364,9 @@ $wgNoFollowDomainExceptions = array();
 $wgAllowDisplayTitle = true;
 
 /**
- * For consistency, restrict DISPLAYTITLE to titles that normalize to the same
- * canonical DB key.
+ * For consistency, restrict DISPLAYTITLE to text that normalizes to the same
+ * canonical DB key. Also disallow some inline CSS rules like display: none;
+ * which can cause the text to be hidden or unselectable.
  */
 $wgRestrictDisplayTitle = true;
 
@@ -2952,18 +4378,32 @@ $wgExpensiveParserFunctionLimit = 100;
 
 /**
  * Preprocessor caching threshold
+ * Setting it to 'false' will disable the preprocessor cache.
  */
 $wgPreprocessorCacheThreshold = 1000;
 
 /**
- * Enable interwiki transcluding.  Only when iw_trans=1.
+ * Enable interwiki transcluding.  Only when iw_trans=1 in the interwiki table.
  */
 $wgEnableScaryTranscluding = false;
 
 /**
- * Expiry time for interwiki transclusion
+ * Expiry time for transcluded templates cached in transcache database table.
+ * Only used $wgEnableInterwikiTranscluding is set to true.
  */
 $wgTranscludeCacheExpiry = 3600;
+
+/**
+ * Enable the magic links feature of automatically turning ISBN xxx,
+ * PMID xxx, RFC xxx into links
+ *
+ * @since 1.28
+ */
+$wgEnableMagicLinks = [
+	'ISBN' => false,
+	'PMID' => false,
+	'RFC' => false
+];
 
 /** @} */ # end of parser settings }
 
@@ -2973,29 +4413,27 @@ $wgTranscludeCacheExpiry = 3600;
  */
 
 /**
- * Under which condition should a page in the main namespace be counted
- * as a valid article? If $wgUseCommaCount is set to true, it will be
- * counted if it contains at least one comma. If it is set to false
- * (default), it will only be counted if it contains at least one [[wiki
- * link]]. See http://www.mediawiki.org/wiki/Manual:Article_count
+ * Method used to determine if a page in a content namespace should be counted
+ * as a valid article.
  *
- * Retroactively changing this variable will not affect
- * the existing count (cf. maintenance/recount.sql).
+ * Redirect pages will never be counted as valid articles.
+ *
+ * This variable can have the following values:
+ * - 'any': all pages as considered as valid articles
+ * - 'link': the page must contain a [[wiki link]] to be considered valid
+ *
+ * See also See https://www.mediawiki.org/wiki/Manual:Article_count
+ *
+ * Retroactively changing this variable will not affect the existing count,
+ * to update it, you will need to run the maintenance/updateArticleCount.php
+ * script.
  */
-$wgUseCommaCount = false;
-
-/**
- * wgHitcounterUpdateFreq sets how often page counters should be updated, higher
- * values are easier on the database. A value of 1 causes the counters to be
- * updated on every hit, any higher value n cause them to update *on average*
- * every n hits. Should be set to either 1 or something largish, eg 1000, for
- * maximum efficiency.
- */
-$wgHitcounterUpdateFreq = 1;
+$wgArticleCountMethod = 'link';
 
 /**
  * How many days user must be idle before he is considered inactive. Will affect
- * the number shown on Special:Statistics and Special:ActiveUsers special page.
+ * the number shown on Special:Statistics, Special:ActiveUsers, and the
+ * {{NUMBEROFACTIVEUSERS}} magic word in wikitext.
  * You might want to leave this as the default value, to provide comparable
  * numbers between different wikis.
  */
@@ -3008,19 +4446,343 @@ $wgActiveUserDays = 30;
  * @{
  */
 
-/** For compatibility with old installations set to false */
+/**
+ * Central ID lookup providers
+ * Key is the provider ID, value is a specification for ObjectFactory
+ * @since 1.27
+ */
+$wgCentralIdLookupProviders = [
+	'local' => [ 'class' => LocalIdLookup::class ],
+];
+
+/**
+ * Central ID lookup provider to use by default
+ * @var string
+ */
+$wgCentralIdLookupProvider = 'local';
+
+/**
+ * Password policy for local wiki users. A user's effective policy
+ * is the superset of all policy statements from the policies for the
+ * groups where the user is a member. If more than one group policy
+ * include the same policy statement, the value is the max() of the
+ * values. Note true > false. The 'default' policy group is required,
+ * and serves as the minimum policy for all users. New statements can
+ * be added by appending to $wgPasswordPolicy['checks'].
+ * Statements:
+ *	- MinimalPasswordLength - minimum length a user can set
+ *	- MinimumPasswordLengthToLogin - passwords shorter than this will
+ *		not be allowed to login, regardless if it is correct.
+ *	- MaximalPasswordLength - maximum length password a user is allowed
+ *		to attempt. Prevents DoS attacks with pbkdf2.
+ *	- PasswordCannotMatchUsername - Password cannot match username to
+ *	- PasswordCannotMatchBlacklist - Username/password combination cannot
+ *		match a specific, hardcoded blacklist.
+ *	- PasswordCannotBePopular - Blacklist passwords which are known to be
+ *		commonly chosen. Set to integer n to ban the top n passwords.
+ *		If you want to ban all common passwords on file, use the
+ *		PHP_INT_MAX constant.
+ * @since 1.26
+ */
+$wgPasswordPolicy = [
+	'policies' => [
+		'bureaucrat' => [
+			'MinimalPasswordLength' => 8,
+			'MinimumPasswordLengthToLogin' => 1,
+			'PasswordCannotMatchUsername' => true,
+			'PasswordCannotBePopular' => 25,
+		],
+		'sysop' => [
+			'MinimalPasswordLength' => 8,
+			'MinimumPasswordLengthToLogin' => 1,
+			'PasswordCannotMatchUsername' => true,
+			'PasswordCannotBePopular' => 25,
+		],
+		'bot' => [
+			'MinimalPasswordLength' => 8,
+			'MinimumPasswordLengthToLogin' => 1,
+			'PasswordCannotMatchUsername' => true,
+		],
+		'default' => [
+			'MinimalPasswordLength' => 1,
+			'PasswordCannotMatchUsername' => true,
+			'PasswordCannotMatchBlacklist' => true,
+			'MaximalPasswordLength' => 4096,
+		],
+	],
+	'checks' => [
+		'MinimalPasswordLength' => 'PasswordPolicyChecks::checkMinimalPasswordLength',
+		'MinimumPasswordLengthToLogin' => 'PasswordPolicyChecks::checkMinimumPasswordLengthToLogin',
+		'PasswordCannotMatchUsername' => 'PasswordPolicyChecks::checkPasswordCannotMatchUsername',
+		'PasswordCannotMatchBlacklist' => 'PasswordPolicyChecks::checkPasswordCannotMatchBlacklist',
+		'MaximalPasswordLength' => 'PasswordPolicyChecks::checkMaximalPasswordLength',
+		'PasswordCannotBePopular' => 'PasswordPolicyChecks::checkPopularPasswordBlacklist'
+	],
+];
+
+/**
+ * Configure AuthManager
+ *
+ * All providers are constructed using ObjectFactory, see that for the general
+ * structure. The array may also contain a key "sort" used to order providers:
+ * providers are stably sorted by this value, which should be an integer
+ * (default is 0).
+ *
+ * Elements are:
+ * - preauth: Array (keys ignored) of specifications for PreAuthenticationProviders
+ * - primaryauth: Array (keys ignored) of specifications for PrimaryAuthenticationProviders
+ * - secondaryauth: Array (keys ignored) of specifications for SecondaryAuthenticationProviders
+ *
+ * @since 1.27
+ * @note If this is null or empty, the value from $wgAuthManagerAutoConfig is
+ *  used instead. Local customization should generally set this variable from
+ *  scratch to the desired configuration. Extensions that want to
+ *  auto-configure themselves should use $wgAuthManagerAutoConfig instead.
+ */
+$wgAuthManagerConfig = null;
+
+/**
+ * @see $wgAuthManagerConfig
+ * @since 1.27
+ */
+$wgAuthManagerAutoConfig = [
+	'preauth' => [
+		MediaWiki\Auth\LegacyHookPreAuthenticationProvider::class => [
+			'class' => MediaWiki\Auth\LegacyHookPreAuthenticationProvider::class,
+			'sort' => 0,
+		],
+		MediaWiki\Auth\ThrottlePreAuthenticationProvider::class => [
+			'class' => MediaWiki\Auth\ThrottlePreAuthenticationProvider::class,
+			'sort' => 0,
+		],
+	],
+	'primaryauth' => [
+		// TemporaryPasswordPrimaryAuthenticationProvider should come before
+		// any other PasswordAuthenticationRequest-based
+		// PrimaryAuthenticationProvider (or at least any that might return
+		// FAIL rather than ABSTAIN for a wrong password), or password reset
+		// won't work right. Do not remove this (or change the key) or
+		// auto-configuration of other such providers in extensions will
+		// probably auto-insert themselves in the wrong place.
+		MediaWiki\Auth\TemporaryPasswordPrimaryAuthenticationProvider::class => [
+			'class' => MediaWiki\Auth\TemporaryPasswordPrimaryAuthenticationProvider::class,
+			'args' => [ [
+				// Fall through to LocalPasswordPrimaryAuthenticationProvider
+				'authoritative' => false,
+			] ],
+			'sort' => 0,
+		],
+		MediaWiki\Auth\LocalPasswordPrimaryAuthenticationProvider::class => [
+			'class' => MediaWiki\Auth\LocalPasswordPrimaryAuthenticationProvider::class,
+			'args' => [ [
+				// Last one should be authoritative, or else the user will get
+				// a less-than-helpful error message (something like "supplied
+				// authentication info not supported" rather than "wrong
+				// password") if it too fails.
+				'authoritative' => true,
+			] ],
+			'sort' => 100,
+		],
+	],
+	'secondaryauth' => [
+		MediaWiki\Auth\CheckBlocksSecondaryAuthenticationProvider::class => [
+			'class' => MediaWiki\Auth\CheckBlocksSecondaryAuthenticationProvider::class,
+			'sort' => 0,
+		],
+		MediaWiki\Auth\ResetPasswordSecondaryAuthenticationProvider::class => [
+			'class' => MediaWiki\Auth\ResetPasswordSecondaryAuthenticationProvider::class,
+			'sort' => 100,
+		],
+		// Linking during login is experimental, enable at your own risk - T134952
+		// MediaWiki\Auth\ConfirmLinkSecondaryAuthenticationProvider::class => [
+		//   'class' => MediaWiki\Auth\ConfirmLinkSecondaryAuthenticationProvider::class,
+		//   'sort' => 100,
+		// ],
+		MediaWiki\Auth\EmailNotificationSecondaryAuthenticationProvider::class => [
+			'class' => MediaWiki\Auth\EmailNotificationSecondaryAuthenticationProvider::class,
+			'sort' => 200,
+		],
+	],
+];
+
+/**
+ * Time frame for re-authentication.
+ *
+ * With only password-based authentication, you'd just ask the user to re-enter
+ * their password to verify certain operations like changing the password or
+ * changing the account's email address. But under AuthManager, the user might
+ * not have a password (you might even have to redirect the browser to a
+ * third-party service or something complex like that), you might want to have
+ * both factors of a two-factor authentication, and so on. So, the options are:
+ * - Incorporate the whole multi-step authentication flow within everything
+ *   that needs to do this.
+ * - Consider it good if they used Special:UserLogin during this session within
+ *   the last X seconds.
+ * - Come up with a third option.
+ *
+ * MediaWiki currently takes the second option. This setting configures the
+ * "X seconds".
+ *
+ * This allows for configuring different time frames for different
+ * "operations". The operations used in MediaWiki core include:
+ * - LinkAccounts
+ * - UnlinkAccount
+ * - ChangeCredentials
+ * - RemoveCredentials
+ * - ChangeEmail
+ *
+ * Additional operations may be used by extensions, either explicitly by
+ * calling AuthManager::securitySensitiveOperationStatus(),
+ * ApiAuthManagerHelper::securitySensitiveOperation() or
+ * SpecialPage::checkLoginSecurityLevel(), or implicitly by overriding
+ * SpecialPage::getLoginSecurityLevel() or by subclassing
+ * AuthManagerSpecialPage.
+ *
+ * The key 'default' is used if a requested operation isn't defined in the array.
+ *
+ * @since 1.27
+ * @var int[] operation => time in seconds. A 'default' key must always be provided.
+ */
+$wgReauthenticateTime = [
+	'default' => 300,
+];
+
+/**
+ * Whether to allow security-sensitive operations when re-authentication is not possible.
+ *
+ * If AuthManager::canAuthenticateNow() is false (e.g. the current
+ * SessionProvider is not able to change users, such as when OAuth is in use),
+ * AuthManager::securitySensitiveOperationStatus() cannot sensibly return
+ * SEC_REAUTH. Setting an operation true here will have it return SEC_OK in
+ * that case, while setting it false will have it return SEC_FAIL.
+ *
+ * The key 'default' is used if a requested operation isn't defined in the array.
+ *
+ * @since 1.27
+ * @see $wgReauthenticateTime
+ * @var bool[] operation => boolean. A 'default' key must always be provided.
+ */
+$wgAllowSecuritySensitiveOperationIfCannotReauthenticate = [
+	'default' => true,
+];
+
+/**
+ * List of AuthenticationRequest class names which are not changeable through
+ * Special:ChangeCredentials and the changeauthenticationdata API.
+ * This is only enforced on the client level; AuthManager itself (e.g.
+ * AuthManager::allowsAuthenticationDataChange calls) is not affected.
+ * Class names are checked for exact match (not for subclasses).
+ * @since 1.27
+ * @var string[]
+ */
+$wgChangeCredentialsBlacklist = [
+	\MediaWiki\Auth\TemporaryPasswordAuthenticationRequest::class
+];
+
+/**
+ * List of AuthenticationRequest class names which are not removable through
+ * Special:RemoveCredentials and the removeauthenticationdata API.
+ * This is only enforced on the client level; AuthManager itself (e.g.
+ * AuthManager::allowsAuthenticationDataChange calls) is not affected.
+ * Class names are checked for exact match (not for subclasses).
+ * @since 1.27
+ * @var string[]
+ */
+$wgRemoveCredentialsBlacklist = [
+	\MediaWiki\Auth\PasswordAuthenticationRequest::class,
+];
+
+/**
+ * For compatibility with old installations set to false
+ * @deprecated since 1.24 will be removed in future
+ */
 $wgPasswordSalt = true;
 
 /**
  * Specifies the minimal length of a user password. If set to 0, empty pass-
  * words are allowed.
+ * @deprecated since 1.26, use $wgPasswordPolicy's MinimalPasswordLength.
  */
-$wgMinimalPasswordLength = 1;
+$wgMinimalPasswordLength = false;
 
 /**
- * Enabes or disables JavaScript-based suggestions of password strength
+ * Specifies the maximal length of a user password (T64685).
+ *
+ * It is not recommended to make this greater than the default, as it can
+ * allow DoS attacks by users setting really long passwords. In addition,
+ * this should not be lowered too much, as it enforces weak passwords.
+ *
+ * @warning Unlike other password settings, user with passwords greater than
+ *      the maximum will not be able to log in.
+ * @deprecated since 1.26, use $wgPasswordPolicy's MaximalPasswordLength.
  */
-$wgLivePasswordStrengthChecks = false;
+$wgMaximalPasswordLength = false;
+
+/**
+ * Specifies if users should be sent to a password-reset form on login, if their
+ * password doesn't meet the requirements of User::isValidPassword().
+ * @since 1.23
+ */
+$wgInvalidPasswordReset = true;
+
+/**
+ * Default password type to use when hashing user passwords
+ *
+ * @since 1.24
+ */
+$wgPasswordDefault = 'pbkdf2';
+
+/**
+ * Configuration for built-in password types. Maps the password type
+ * to an array of options. The 'class' option is the Password class to
+ * use. All other options are class-dependent.
+ *
+ * An advanced example:
+ * @code
+ * $wgPasswordConfig['bcrypt-peppered'] = [
+ *     'class' => EncryptedPassword::class,
+ *     'underlying' => 'bcrypt',
+ *     'secrets' => [],
+ *     'cipher' => MCRYPT_RIJNDAEL_256,
+ *     'mode' => MCRYPT_MODE_CBC,
+ *     'cost' => 5,
+ * ];
+ * @endcode
+ *
+ * @since 1.24
+ */
+$wgPasswordConfig = [
+	'A' => [
+		'class' => MWOldPassword::class,
+	],
+	'B' => [
+		'class' => MWSaltedPassword::class,
+	],
+	'pbkdf2-legacyA' => [
+		'class' => LayeredParameterizedPassword::class,
+		'types' => [
+			'A',
+			'pbkdf2',
+		],
+	],
+	'pbkdf2-legacyB' => [
+		'class' => LayeredParameterizedPassword::class,
+		'types' => [
+			'B',
+			'pbkdf2',
+		],
+	],
+	'bcrypt' => [
+		'class' => BcryptPassword::class,
+		'cost' => 9,
+	],
+	'pbkdf2' => [
+		'class' => Pbkdf2Password::class,
+		'algo' => 'sha512',
+		'cost' => '30000',
+		'length' => '64',
+	],
+];
 
 /**
  * Whether to allow password resets ("enter some identifying data, and we'll send an email
@@ -3028,130 +4790,127 @@ $wgLivePasswordStrengthChecks = false;
  * various bits of data.  Setting all of these to false (or the whole variable to false)
  * has the effect of disabling password resets entirely
  */
-$wgPasswordResetRoutes = array(
+$wgPasswordResetRoutes = [
 	'username' => true,
-	'email' => false,
-);
+	'email' => true,
+];
 
 /**
  * Maximum number of Unicode characters in signature
  */
-$wgMaxSigChars		= 255;
+$wgMaxSigChars = 255;
 
 /**
  * Maximum number of bytes in username. You want to run the maintenance
  * script ./maintenance/checkUsernames.php once you have changed this value.
  */
-$wgMaxNameChars		= 255;
+$wgMaxNameChars = 255;
 
 /**
  * Array of usernames which may not be registered or logged in from
  * Maintenance scripts can still use these
  */
-$wgReservedUsernames = array(
+$wgReservedUsernames = [
 	'MediaWiki default', // Default 'Main Page' and MediaWiki: message pages
 	'Conversion script', // Used for the old Wikipedia software upgrade
 	'Maintenance script', // Maintenance scripts which perform editing, image import script
 	'Template namespace initialisation script', // Used in 1.2->1.3 upgrade
+	'ScriptImporter', // Default user name used by maintenance/importSiteScripts.php
+	'Unknown user', // Used in WikiImporter when importing revisions with no author
 	'msg:double-redirect-fixer', // Automatic double redirect fix
 	'msg:usermessage-editor', // Default user for leaving user messages
-	'msg:proxyblocker', // For Special:Blockme
-);
+	'msg:proxyblocker', // For $wgProxyList and Special:Blockme (removed in 1.22)
+	'msg:sorbs', // For $wgEnableDnsBlacklist etc.
+	'msg:spambot_username', // Used by cleanupSpam.php
+	'msg:autochange-username', // Used by anon category RC entries (parser functions, Lua & purges)
+];
 
 /**
  * Settings added to this array will override the default globals for the user
  * preferences used by anonymous visitors and newly created accounts.
- * For instance, to disable section editing links:
- * $wgDefaultUserOptions ['editsection'] = 0;
- *
+ * For instance, to disable editing on double clicks:
+ * $wgDefaultUserOptions ['editondblclick'] = 0;
  */
-$wgDefaultUserOptions = array(
-	'ccmeonemails'            => 0,
-	'cols'                    => 80,
-	'date'                    => 'default',
-	'diffonly'                => 0,
-	'disablemail'             => 0,
-	'disablesuggest'          => 0,
-	'editfont'                => 'default',
-	'editondblclick'          => 0,
-	'editsection'             => 1,
+$wgDefaultUserOptions = [
+	'ccmeonemails' => 0,
+	'cols' => 80, // @deprecated since 1.29 No longer used in core
+	'date' => 'default',
+	'diffonly' => 0,
+	'disablemail' => 0,
+	'editfont' => 'monospace',
+	'editondblclick' => 0,
 	'editsectiononrightclick' => 0,
-	'enotifminoredits'        => 0,
-	'enotifrevealaddr'        => 0,
-	'enotifusertalkpages'     => 1,
-	'enotifwatchlistpages'    => 0,
-	'extendwatchlist'         => 0,
-	'externaldiff'            => 0,
-	'externaleditor'          => 0,
-	'fancysig'                => 0,
-	'forceeditsummary'        => 0,
-	'gender'                  => 'unknown',
-	'hideminor'               => 0,
-	'hidepatrolled'           => 0,
-	'highlightbroken'         => 1,
-	'imagesize'               => 2,
-	'justify'                 => 0,
-	'math'                    => 1,
-	'minordefault'            => 0,
-	'newpageshidepatrolled'   => 0,
-	'nocache'                 => 0,
-	'noconvertlink'           => 0,
-	'norollbackdiff'          => 0,
-	'numberheadings'          => 0,
-	'previewonfirst'          => 0,
-	'previewontop'            => 1,
-	'quickbar'                => 1,
-	'rcdays'                  => 7,
-	'rclimit'                 => 50,
-	'rememberpassword'        => 0,
-	'rows'                    => 25,
-	'searchlimit'             => 20,
-	'showhiddencats'          => 0,
-	'showjumplinks'           => 1,
-	'shownumberswatching'     => 1,
-	'showtoc'                 => 1,
-	'showtoolbar'             => 1,
-	'skin'                    => false,
-	'stubthreshold'           => 0,
-	'thumbsize'               => 2,
-	'underline'               => 2,
-	'uselivepreview'          => 0,
-	'usenewrc'                => 0,
-	'watchcreations'          => 0,
-	'watchdefault'            => 0,
-	'watchdeletion'           => 0,
-	'watchlistdays'           => 3.0,
-	'watchlisthideanons'      => 0,
-	'watchlisthidebots'       => 0,
-	'watchlisthideliu'        => 0,
-	'watchlisthideminor'      => 0,
-	'watchlisthideown'        => 0,
-	'watchlisthidepatrolled'  => 0,
-	'watchmoves'              => 0,
-	'wllimit'                 => 250,
-);
+	'email-allow-new-users' => 1,
+	'enotifminoredits' => 0,
+	'enotifrevealaddr' => 0,
+	'enotifusertalkpages' => 1,
+	'enotifwatchlistpages' => 1,
+	'extendwatchlist' => 1,
+	'fancysig' => 0,
+	'forceeditsummary' => 0,
+	'gender' => 'unknown',
+	'hideminor' => 0,
+	'hidepatrolled' => 0,
+	'hidecategorization' => 1,
+	'imagesize' => 2,
+	'minordefault' => 0,
+	'newpageshidepatrolled' => 0,
+	'nickname' => '',
+	'norollbackdiff' => 0,
+	'numberheadings' => 0,
+	'previewonfirst' => 0,
+	'previewontop' => 1,
+	'rcdays' => 7,
+	'rcenhancedfilters' => 0,
+	'rcenhancedfilters-disable' => 0,
+	'rclimit' => 50,
+	'rows' => 25, // @deprecated since 1.29 No longer used in core
+	'showhiddencats' => 0,
+	'shownumberswatching' => 1,
+	'showtoolbar' => 1,
+	'skin' => false,
+	'stubthreshold' => 0,
+	'thumbsize' => 5,
+	'underline' => 2,
+	'uselivepreview' => 0,
+	'usenewrc' => 1,
+	'watchcreations' => 1,
+	'watchdefault' => 1,
+	'watchdeletion' => 0,
+	'watchuploads' => 1,
+	'watchlistdays' => 3.0,
+	'watchlisthideanons' => 0,
+	'watchlisthidebots' => 0,
+	'watchlisthideliu' => 0,
+	'watchlisthideminor' => 0,
+	'watchlisthideown' => 0,
+	'watchlisthidepatrolled' => 0,
+	'watchlisthidecategorization' => 1,
+	'watchlistreloadautomatically' => 0,
+	'watchlistunwatchlinks' => 0,
+	'watchmoves' => 0,
+	'watchrollback' => 0,
+	'wllimit' => 250,
+	'useeditwarning' => 1,
+	'prefershttps' => 1,
+];
 
 /**
- * Whether or not to allow and use real name fields.
- * @deprecated in 1.16, use $wgHiddenPrefs[] = 'realname' below to disable real
- * names
+ * An array of preferences to not show for the user
  */
-$wgAllowRealName = true;
-
-/** An array of preferences to not show for the user */
-$wgHiddenPrefs = array();
+$wgHiddenPrefs = [];
 
 /**
  * Characters to prevent during new account creations.
  * This is used in a regular expression character class during
  * registration (regex metacharacters like / are escaped).
  */
-$wgInvalidUsernameCharacters = '@';
+$wgInvalidUsernameCharacters = '@:';
 
 /**
  * Character used as a delimiter when testing for interwiki userrights
  * (In Special:UserRights, it is possible to modify users on different
- * databases if the delimiter is used, e.g. Someuser@enwiki).
+ * databases if the delimiter is used, e.g. "Someuser@enwiki").
  *
  * It is recommended that you have this delimiter in
  * $wgInvalidUsernameCharacters above, or you will not be able to
@@ -3160,69 +4919,48 @@ $wgInvalidUsernameCharacters = '@';
 $wgUserrightsInterwikiDelimiter = '@';
 
 /**
- * Use some particular type of external authentication.  The specific
- * authentication module you use will normally require some extra settings to
- * be specified.
- *
- * null indicates no external authentication is to be used.  Otherwise,
- * $wgExternalAuthType must be the name of a non-abstract class that extends
- * ExternalUser.
- *
- * Core authentication modules can be found in includes/extauth/.
- */
-$wgExternalAuthType = null;
-
-/**
- * Configuration for the external authentication.  This may include arbitrary
- * keys that depend on the authentication mechanism.  For instance,
- * authentication against another web app might require that the database login
- * info be provided.  Check the file where your auth mechanism is defined for
- * info on what to put here.
- */
-$wgExternalAuthConf = array();
-
-/**
- * When should we automatically create local accounts when external accounts
- * already exist, if using ExternalAuth?  Can have three values: 'never',
- * 'login', 'view'.  'view' requires the external database to support cookies,
- * and implies 'login'.
- *
- * TODO: Implement 'view' (currently behaves like 'login').
- */
-$wgAutocreatePolicy = 'login';
-
-/**
- * Policies for how each preference is allowed to be changed, in the presence
- * of external authentication.  The keys are preference keys, e.g., 'password'
- * or 'emailaddress' (see Preferences.php et al.).  The value can be one of the
- * following:
- *
- * - local: Allow changes to this pref through the wiki interface but only
- * apply them locally (default).
- * - semiglobal: Allow changes through the wiki interface and try to apply them
- * to the foreign database, but continue on anyway if that fails.
- * - global: Allow changes through the wiki interface, but only let them go
- * through if they successfully update the foreign database.
- * - message: Allow no local changes for linked accounts; replace the change
- * form with a message provided by the auth plugin, telling the user how to
- * change the setting externally (maybe providing a link, etc.).  If the auth
- * plugin provides no message for this preference, hide it entirely.
- *
- * Accounts that are not linked to an external account are never affected by
- * this setting.  You may want to look at $wgHiddenPrefs instead.
- * $wgHiddenPrefs supersedes this option.
- *
- * TODO: Implement message, global.
- */
-$wgAllowPrefChange = array();
-
-/**
  * This is to let user authenticate using https when they come from http.
  * Based on an idea by George Herbert on wikitech-l:
- * http://lists.wikimedia.org/pipermail/wikitech-l/2010-October/050065.html
+ * https://lists.wikimedia.org/pipermail/wikitech-l/2010-October/050039.html
  * @since 1.17
  */
-$wgSecureLogin        = false;
+$wgSecureLogin = false;
+
+/**
+ * Versioning for authentication tokens.
+ *
+ * If non-null, this is combined with the user's secret (the user_token field
+ * in the DB) to generate the token cookie. Changing this will invalidate all
+ * active sessions (i.e. it will log everyone out).
+ *
+ * @since 1.27
+ * @var string|null
+ */
+$wgAuthenticationTokenVersion = null;
+
+/**
+ * MediaWiki\Session\SessionProvider configuration.
+ *
+ * Value is an array of ObjectFactory specifications for the SessionProviders
+ * to be used. Keys in the array are ignored. Order is not significant.
+ *
+ * @since 1.27
+ */
+$wgSessionProviders = [
+	MediaWiki\Session\CookieSessionProvider::class => [
+		'class' => MediaWiki\Session\CookieSessionProvider::class,
+		'args' => [ [
+			'priority' => 30,
+			'callUserSetCookiesHook' => true,
+		] ],
+	],
+	MediaWiki\Session\BotPasswordSessionProvider::class => [
+		'class' => MediaWiki\Session\BotPasswordSessionProvider::class,
+		'args' => [ [
+			'priority' => 75,
+		] ],
+	],
+];
 
 /** @} */ # end user accounts }
 
@@ -3234,27 +4972,36 @@ $wgSecureLogin        = false;
 /**
  * Number of seconds before autoblock entries expire. Default 86400 = 1 day.
  */
-$wgAutoblockExpiry      = 86400;
+$wgAutoblockExpiry = 86400;
 
 /**
  * Set this to true to allow blocked users to edit their own user talk page.
  */
-$wgBlockAllowsUTEdit    = false;
+$wgBlockAllowsUTEdit = true;
 
-/** Allow sysops to ban users from accessing Emailuser */
-$wgSysopEmailBans       = true;
+/**
+ * Allow sysops to ban users from accessing Emailuser
+ */
+$wgSysopEmailBans = true;
 
 /**
  * Limits on the possible sizes of range blocks.
  *
  * CIDR notation is hard to understand, it's easy to mistakenly assume that a
- * /1 is a small range and a /31 is a large range. Setting this to half the
- * number of bits avoids such errors.
+ * /1 is a small range and a /31 is a large range. For IPv4, setting a limit of
+ * half the number of bits avoids such errors, and allows entire ISPs to be
+ * blocked using a small number of range blocks.
+ *
+ * For IPv6, RFC 3177 recommends that a /48 be allocated to every residential
+ * customer, so range blocks larger than /64 (half the number of bits) will
+ * plainly be required. RFC 4692 implies that a very large ISP may be
+ * allocated a /19 if a generous HD-Ratio of 0.8 is used, so we will use that
+ * as our limit. As of 2012, blocking the whole world would require a /4 range.
  */
-$wgBlockCIDRLimit = array(
+$wgBlockCIDRLimit = [
 	'IPv4' => 16, # Blocks larger than a /16 (64k addresses) will not be allowed
-	'IPv6' => 64, # 2^64 = ~1.8x10^19 addresses
-);
+	'IPv6' => 19,
+];
 
 /**
  * If true, blocked users will not be allowed to login. When using this with
@@ -3266,22 +5013,54 @@ $wgBlockCIDRLimit = array(
 $wgBlockDisablesLogin = false;
 
 /**
- * Pages anonymous user may see as an array, e.g.
+ * Pages anonymous user may see, set as an array of pages titles.
  *
- * <code>
+ * @par Example:
+ * @code
  * $wgWhitelistRead = array ( "Main Page", "Wikipedia:Help");
- * </code>
+ * @endcode
  *
  * Special:Userlogin and Special:ChangePassword are always whitelisted.
  *
- * NOTE: This will only work if $wgGroupPermissions['*']['read'] is false --
+ * @note This will only work if $wgGroupPermissions['*']['read'] is false --
  * see below. Otherwise, ALL pages are accessible, regardless of this setting.
  *
- * Also note that this will only protect _pages in the wiki_. Uploaded files
+ * @note Also that this will only protect _pages in the wiki_. Uploaded files
  * will remain readable. You can use img_auth.php to protect uploaded files,
- * see http://www.mediawiki.org/wiki/Manual:Image_Authorization
+ * see https://www.mediawiki.org/wiki/Manual:Image_Authorization
+ *
+ * @note Extensions should not modify this, but use the TitleReadWhitelist
+ * hook instead.
  */
 $wgWhitelistRead = false;
+
+/**
+ * Pages anonymous user may see, set as an array of regular expressions.
+ *
+ * This function will match the regexp against the title name, which
+ * is without underscore.
+ *
+ * @par Example:
+ * To whitelist [[Main Page]]:
+ * @code
+ * $wgWhitelistReadRegexp = [ "/Main Page/" ];
+ * @endcode
+ *
+ * @note Unless ^ and/or $ is specified, a regular expression might match
+ * pages not intended to be whitelisted.  The above example will also
+ * whitelist a page named 'Security Main Page'.
+ *
+ * @par Example:
+ * To allow reading any page starting with 'User' regardless of the case:
+ * @code
+ * $wgWhitelistReadRegexp = [ "@^UsEr.*@i" ];
+ * @endcode
+ * Will allow both [[User is banned]] and [[User:JohnDoe]]
+ *
+ * @note This will only work if $wgGroupPermissions['*']['read'] is false --
+ * see below. Otherwise, ALL pages are accessible, regardless of this setting.
+ */
+$wgWhitelistReadRegexp = false;
 
 /**
  * Should editors be required to have a validated e-mail
@@ -3290,13 +5069,26 @@ $wgWhitelistRead = false;
 $wgEmailConfirmToEdit = false;
 
 /**
+ * Should MediaWiki attempt to protect user's privacy when doing redirects?
+ * Keep this true if access counts to articles are made public.
+ */
+$wgHideIdentifiableRedirects = true;
+
+/**
  * Permission keys given to users in each group.
+ *
+ * This is an array where the keys are all groups and each value is an
+ * array of the format (right => boolean).
+ *
+ * The second format is used to support per-namespace permissions.
+ * Note that this feature does not fully work for all permission types.
+ *
  * All users are implicitly in the '*' group including anonymous visitors;
  * logged-in users are all implicitly in the 'user' group. These will be
  * combined with the permissions of all groups that a given user is listed
  * in in the user_groups table.
  *
- * Note: Don't set $wgGroupPermissions = array(); unless you know what you're
+ * Note: Don't set $wgGroupPermissions = []; unless you know what you're
  * doing! This will wipe all permissions, and may mean that your users are
  * unable to perform certain essential tasks or access new functionality
  * when new permissions are introduced and default grants established.
@@ -3304,105 +5096,129 @@ $wgEmailConfirmToEdit = false;
  * Functionality to make pages inaccessible has not been extensively tested
  * for security. Use at your own risk!
  *
- * This replaces wgWhitelistAccount and wgWhitelistEdit
+ * This replaces $wgWhitelistAccount and $wgWhitelistEdit
  */
-$wgGroupPermissions = array();
+$wgGroupPermissions = [];
 
 /** @cond file_level_code */
 // Implicit group for all visitors
-$wgGroupPermissions['*']['createaccount']    = true;
-$wgGroupPermissions['*']['read']             = true;
-$wgGroupPermissions['*']['edit']             = true;
-$wgGroupPermissions['*']['createpage']       = true;
-$wgGroupPermissions['*']['createtalk']       = true;
-$wgGroupPermissions['*']['writeapi']         = true;
-//$wgGroupPermissions['*']['patrolmarks']      = false; // let anons see what was patrolled
+$wgGroupPermissions['*']['createaccount'] = true;
+$wgGroupPermissions['*']['read'] = true;
+$wgGroupPermissions['*']['edit'] = true;
+$wgGroupPermissions['*']['createpage'] = true;
+$wgGroupPermissions['*']['createtalk'] = true;
+$wgGroupPermissions['*']['writeapi'] = true;
+$wgGroupPermissions['*']['viewmywatchlist'] = true;
+$wgGroupPermissions['*']['editmywatchlist'] = true;
+$wgGroupPermissions['*']['viewmyprivateinfo'] = true;
+$wgGroupPermissions['*']['editmyprivateinfo'] = true;
+$wgGroupPermissions['*']['editmyoptions'] = true;
+# $wgGroupPermissions['*']['patrolmarks'] = false; // let anons see what was patrolled
 
 // Implicit group for all logged-in accounts
-$wgGroupPermissions['user']['move']             = true;
-$wgGroupPermissions['user']['move-subpages']    = true;
+$wgGroupPermissions['user']['move'] = true;
+$wgGroupPermissions['user']['move-subpages'] = true;
 $wgGroupPermissions['user']['move-rootuserpages'] = true; // can move root userpages
-//$wgGroupPermissions['user']['movefile']         = true;	// Disabled for now due to possible bugs and security concerns
-$wgGroupPermissions['user']['read']             = true;
-$wgGroupPermissions['user']['edit']             = true;
-$wgGroupPermissions['user']['createpage']       = true;
-$wgGroupPermissions['user']['createtalk']       = true;
-$wgGroupPermissions['user']['writeapi']         = true;
-$wgGroupPermissions['user']['upload']           = true;
-$wgGroupPermissions['user']['reupload']         = true;
-$wgGroupPermissions['user']['reupload-shared']  = true;
-$wgGroupPermissions['user']['minoredit']        = true;
-$wgGroupPermissions['user']['purge']            = true; // can use ?action=purge without clicking "ok"
-$wgGroupPermissions['user']['sendemail']        = true;
+$wgGroupPermissions['user']['move-categorypages'] = true;
+$wgGroupPermissions['user']['movefile'] = true;
+$wgGroupPermissions['user']['read'] = true;
+$wgGroupPermissions['user']['edit'] = true;
+$wgGroupPermissions['user']['createpage'] = true;
+$wgGroupPermissions['user']['createtalk'] = true;
+$wgGroupPermissions['user']['writeapi'] = true;
+$wgGroupPermissions['user']['upload'] = true;
+$wgGroupPermissions['user']['reupload'] = true;
+$wgGroupPermissions['user']['reupload-shared'] = true;
+$wgGroupPermissions['user']['minoredit'] = true;
+$wgGroupPermissions['user']['editmyusercss'] = true;
+$wgGroupPermissions['user']['editmyuserjson'] = true;
+$wgGroupPermissions['user']['editmyuserjs'] = true;
+$wgGroupPermissions['user']['purge'] = true;
+$wgGroupPermissions['user']['sendemail'] = true;
+$wgGroupPermissions['user']['applychangetags'] = true;
+$wgGroupPermissions['user']['changetags'] = true;
+$wgGroupPermissions['user']['editcontentmodel'] = true;
 
 // Implicit group for accounts that pass $wgAutoConfirmAge
 $wgGroupPermissions['autoconfirmed']['autoconfirmed'] = true;
+$wgGroupPermissions['autoconfirmed']['editsemiprotected'] = true;
 
 // Users with bot privilege can have their edits hidden
 // from various log pages by default
-$wgGroupPermissions['bot']['bot']              = true;
-$wgGroupPermissions['bot']['autoconfirmed']    = true;
-$wgGroupPermissions['bot']['nominornewtalk']   = true;
-$wgGroupPermissions['bot']['autopatrol']       = true;
+$wgGroupPermissions['bot']['bot'] = true;
+$wgGroupPermissions['bot']['autoconfirmed'] = true;
+$wgGroupPermissions['bot']['editsemiprotected'] = true;
+$wgGroupPermissions['bot']['nominornewtalk'] = true;
+$wgGroupPermissions['bot']['autopatrol'] = true;
 $wgGroupPermissions['bot']['suppressredirect'] = true;
-$wgGroupPermissions['bot']['apihighlimits']    = true;
-$wgGroupPermissions['bot']['writeapi']         = true;
-#$wgGroupPermissions['bot']['editprotected']    = true; // can edit all protected pages without cascade protection enabled
+$wgGroupPermissions['bot']['apihighlimits'] = true;
+$wgGroupPermissions['bot']['writeapi'] = true;
 
 // Most extra permission abilities go to this group
-$wgGroupPermissions['sysop']['block']            = true;
-$wgGroupPermissions['sysop']['createaccount']    = true;
-$wgGroupPermissions['sysop']['delete']           = true;
-$wgGroupPermissions['sysop']['bigdelete']        = true; // can be separately configured for pages with > $wgDeleteRevisionsLimit revs
-$wgGroupPermissions['sysop']['deletedhistory']   = true; // can view deleted history entries, but not see or restore the text
-$wgGroupPermissions['sysop']['deletedtext']      = true; // can view deleted revision text
-$wgGroupPermissions['sysop']['undelete']         = true;
-$wgGroupPermissions['sysop']['editinterface']    = true;
-$wgGroupPermissions['sysop']['editusercss']      = true;
-$wgGroupPermissions['sysop']['edituserjs']       = true;
-$wgGroupPermissions['sysop']['import']           = true;
-$wgGroupPermissions['sysop']['importupload']     = true;
-$wgGroupPermissions['sysop']['move']             = true;
-$wgGroupPermissions['sysop']['move-subpages']    = true;
+$wgGroupPermissions['sysop']['block'] = true;
+$wgGroupPermissions['sysop']['createaccount'] = true;
+$wgGroupPermissions['sysop']['delete'] = true;
+// can be separately configured for pages with > $wgDeleteRevisionsLimit revs
+$wgGroupPermissions['sysop']['bigdelete'] = true;
+// can view deleted history entries, but not see or restore the text
+$wgGroupPermissions['sysop']['deletedhistory'] = true;
+// can view deleted revision text
+$wgGroupPermissions['sysop']['deletedtext'] = true;
+$wgGroupPermissions['sysop']['undelete'] = true;
+$wgGroupPermissions['sysop']['editinterface'] = true;
+$wgGroupPermissions['sysop']['editusercss'] = true;
+$wgGroupPermissions['sysop']['edituserjson'] = true;
+$wgGroupPermissions['sysop']['edituserjs'] = true;
+$wgGroupPermissions['sysop']['import'] = true;
+$wgGroupPermissions['sysop']['importupload'] = true;
+$wgGroupPermissions['sysop']['move'] = true;
+$wgGroupPermissions['sysop']['move-subpages'] = true;
 $wgGroupPermissions['sysop']['move-rootuserpages'] = true;
-$wgGroupPermissions['sysop']['patrol']           = true;
-$wgGroupPermissions['sysop']['autopatrol']       = true;
-$wgGroupPermissions['sysop']['protect']          = true;
-$wgGroupPermissions['sysop']['proxyunbannable']  = true;
-$wgGroupPermissions['sysop']['rollback']         = true;
-$wgGroupPermissions['sysop']['upload']           = true;
-$wgGroupPermissions['sysop']['reupload']         = true;
-$wgGroupPermissions['sysop']['reupload-shared']  = true;
-$wgGroupPermissions['sysop']['unwatchedpages']   = true;
-$wgGroupPermissions['sysop']['autoconfirmed']    = true;
-$wgGroupPermissions['sysop']['upload_by_url']    = true;
-$wgGroupPermissions['sysop']['ipblock-exempt']   = true;
-$wgGroupPermissions['sysop']['blockemail']       = true;
-$wgGroupPermissions['sysop']['markbotedits']     = true;
-$wgGroupPermissions['sysop']['apihighlimits']    = true;
-$wgGroupPermissions['sysop']['browsearchive']    = true;
-$wgGroupPermissions['sysop']['noratelimit']      = true;
-$wgGroupPermissions['sysop']['movefile']         = true;
-$wgGroupPermissions['sysop']['unblockself']      = true;
+$wgGroupPermissions['sysop']['move-categorypages'] = true;
+$wgGroupPermissions['sysop']['patrol'] = true;
+$wgGroupPermissions['sysop']['autopatrol'] = true;
+$wgGroupPermissions['sysop']['protect'] = true;
+$wgGroupPermissions['sysop']['editprotected'] = true;
+$wgGroupPermissions['sysop']['rollback'] = true;
+$wgGroupPermissions['sysop']['upload'] = true;
+$wgGroupPermissions['sysop']['reupload'] = true;
+$wgGroupPermissions['sysop']['reupload-shared'] = true;
+$wgGroupPermissions['sysop']['unwatchedpages'] = true;
+$wgGroupPermissions['sysop']['autoconfirmed'] = true;
+$wgGroupPermissions['sysop']['editsemiprotected'] = true;
+$wgGroupPermissions['sysop']['ipblock-exempt'] = true;
+$wgGroupPermissions['sysop']['blockemail'] = true;
+$wgGroupPermissions['sysop']['markbotedits'] = true;
+$wgGroupPermissions['sysop']['apihighlimits'] = true;
+$wgGroupPermissions['sysop']['browsearchive'] = true;
+$wgGroupPermissions['sysop']['noratelimit'] = true;
+$wgGroupPermissions['sysop']['movefile'] = true;
+$wgGroupPermissions['sysop']['unblockself'] = true;
 $wgGroupPermissions['sysop']['suppressredirect'] = true;
-#$wgGroupPermissions['sysop']['mergehistory']     = true;
-#$wgGroupPermissions['sysop']['trackback']        = true;
+# $wgGroupPermissions['sysop']['pagelang'] = true;
+# $wgGroupPermissions['sysop']['upload_by_url'] = true;
+$wgGroupPermissions['sysop']['mergehistory'] = true;
+$wgGroupPermissions['sysop']['managechangetags'] = true;
+$wgGroupPermissions['sysop']['deletechangetags'] = true;
 
 // Permission to change users' group assignments
-$wgGroupPermissions['bureaucrat']['userrights']  = true;
+$wgGroupPermissions['bureaucrat']['userrights'] = true;
 $wgGroupPermissions['bureaucrat']['noratelimit'] = true;
 // Permission to change users' groups assignments across wikis
-#$wgGroupPermissions['bureaucrat']['userrights-interwiki'] = true;
+# $wgGroupPermissions['bureaucrat']['userrights-interwiki'] = true;
 // Permission to export pages including linked pages regardless of $wgExportMaxLinkDepth
-#$wgGroupPermissions['bureaucrat']['override-export-depth'] = true;
+# $wgGroupPermissions['bureaucrat']['override-export-depth'] = true;
 
-#$wgGroupPermissions['sysop']['deleterevision']  = true;
+# $wgGroupPermissions['sysop']['deletelogentry'] = true;
+# $wgGroupPermissions['sysop']['deleterevision'] = true;
 // To hide usernames from users and Sysops
-#$wgGroupPermissions['suppress']['hideuser'] = true;
+# $wgGroupPermissions['suppress']['hideuser'] = true;
 // To hide revisions/log items from users and Sysops
-#$wgGroupPermissions['suppress']['suppressrevision'] = true;
+# $wgGroupPermissions['suppress']['suppressrevision'] = true;
+// To view revisions/log items hidden from users and Sysops
+# $wgGroupPermissions['suppress']['viewsuppressed'] = true;
 // For private suppression log access
-#$wgGroupPermissions['suppress']['suppressionlog'] = true;
+# $wgGroupPermissions['suppress']['suppressionlog'] = true;
 
 /**
  * The developer group is deprecated, but can be activated if need be
@@ -3416,41 +5232,47 @@ $wgGroupPermissions['bureaucrat']['noratelimit'] = true;
 
 /**
  * Permission keys revoked from users in each group.
+ *
  * This acts the same way as wgGroupPermissions above, except that
  * if the user is in a group here, the permission will be removed from them.
  *
  * Improperly setting this could mean that your users will be unable to perform
  * certain essential tasks, so use at your own risk!
  */
-$wgRevokePermissions = array();
+$wgRevokePermissions = [];
 
 /**
  * Implicit groups, aren't shown on Special:Listusers or somewhere else
  */
-$wgImplicitGroups = array( '*', 'user', 'autoconfirmed' );
+$wgImplicitGroups = [ '*', 'user', 'autoconfirmed' ];
 
 /**
  * A map of group names that the user is in, to group names that those users
  * are allowed to add or revoke.
  *
- * Setting the list of groups to add or revoke to true is equivalent to "any group".
+ * Setting the list of groups to add or revoke to true is equivalent to "any
+ * group".
  *
- * For example, to allow sysops to add themselves to the "bot" group:
+ * @par Example:
+ * To allow sysops to add themselves to the "bot" group:
+ * @code
+ *    $wgGroupsAddToSelf = [ 'sysop' => [ 'bot' ] ];
+ * @endcode
  *
- *    $wgGroupsAddToSelf = array( 'sysop' => array( 'bot' ) );
- *
+ * @par Example:
  * Implicit groups may be used for the source group, for instance:
- *
- *    $wgGroupsRemoveFromSelf = array( '*' => true );
- *
+ * @code
+ *    $wgGroupsRemoveFromSelf = [ '*' => true ];
+ * @endcode
  * This allows users in the '*' group (i.e. any user) to remove themselves from
  * any group that they happen to be in.
- *
  */
-$wgGroupsAddToSelf = array();
+$wgGroupsAddToSelf = [];
 
-/** @see $wgGroupsAddToSelf */
-$wgGroupsRemoveFromSelf = array();
+/**
+ * @see $wgGroupsAddToSelf
+ */
+$wgGroupsRemoveFromSelf = [];
 
 /**
  * Set of available actions that can be restricted via action=protect
@@ -3459,7 +5281,7 @@ $wgGroupsRemoveFromSelf = array();
  * Title::getRestrictionTypes() will remove restrictions that are not
  * applicable to a specific title (create and upload)
  */
-$wgRestrictionTypes = array( 'create', 'edit', 'move', 'upload' );
+$wgRestrictionTypes = [ 'create', 'edit', 'move', 'upload' ];
 
 /**
  * Rights which can be required for each protection level (via action=protect)
@@ -3469,26 +5291,55 @@ $wgRestrictionTypes = array( 'create', 'edit', 'move', 'upload' );
  * dictates the order on the protection form's lists.
  *
  *   - '' will be ignored (i.e. unprotected)
- *   - 'sysop' is quietly rewritten to 'protect' for backwards compatibility
+ *   - 'autoconfirmed' is quietly rewritten to 'editsemiprotected' for backwards compatibility
+ *   - 'sysop' is quietly rewritten to 'editprotected' for backwards compatibility
  */
-$wgRestrictionLevels = array( '', 'autoconfirmed', 'sysop' );
+$wgRestrictionLevels = [ '', 'autoconfirmed', 'sysop' ];
+
+/**
+ * Restriction levels that can be used with cascading protection
+ *
+ * A page can only be protected with cascading protection if the
+ * requested restriction level is included in this array.
+ *
+ * 'autoconfirmed' is quietly rewritten to 'editsemiprotected' for backwards compatibility.
+ * 'sysop' is quietly rewritten to 'editprotected' for backwards compatibility.
+ */
+$wgCascadingRestrictionLevels = [ 'sysop' ];
+
+/**
+ * Restriction levels that should be considered "semiprotected"
+ *
+ * Certain places in the interface recognize a dichotomy between "protected"
+ * and "semiprotected", without further distinguishing the specific levels. In
+ * general, if anyone can be eligible to edit a protection level merely by
+ * reaching some condition in $wgAutopromote, it should probably be considered
+ * "semiprotected".
+ *
+ * 'autoconfirmed' is quietly rewritten to 'editsemiprotected' for backwards compatibility.
+ * 'sysop' is not changed, since it really shouldn't be here.
+ */
+$wgSemiprotectedRestrictionLevels = [ 'autoconfirmed' ];
 
 /**
  * Set the minimum permissions required to edit pages in each
  * namespace.  If you list more than one permission, a user must
  * have all of them to edit pages in that namespace.
  *
- * Note: NS_MEDIAWIKI is implicitly restricted to editinterface.
+ * @note NS_MEDIAWIKI is implicitly restricted to 'editinterface'.
  */
-$wgNamespaceProtection = array();
+$wgNamespaceProtection = [];
 
 /**
  * Pages in namespaces in this array can not be used as templates.
- * Elements must be numeric namespace ids.
+ *
+ * Elements MUST be numeric namespace ids, you can safely use the MediaWiki
+ * namespaces constants (NS_USER, NS_MAIN...).
+ *
  * Among other things, this may be useful to enforce read-restrictions
- * which may otherwise be bypassed by using the template machanism.
+ * which may otherwise be bypassed by using the template mechanism.
  */
-$wgNonincludableNamespaces = array();
+$wgNonincludableNamespaces = [];
 
 /**
  * Number of seconds an account is required to age before it's given the
@@ -3500,11 +5351,15 @@ $wgNonincludableNamespaces = array();
  *
  * When left at 0, all registered accounts will pass.
  *
- * Example:
- * <code>
+ * @par Example:
+ * Set automatic confirmation to 10 minutes (which is 600 seconds):
+ * @code
  *  $wgAutoConfirmAge = 600;     // ten minutes
+ * @endcode
+ * Set age to one day:
+ * @code
  *  $wgAutoConfirmAge = 3600*24; // one day
- * </code>
+ * @endcode
  */
 $wgAutoConfirmAge = 0;
 
@@ -3512,62 +5367,139 @@ $wgAutoConfirmAge = 0;
  * Number of edits an account requires before it is autoconfirmed.
  * Passing both this AND the time requirement is needed. Example:
  *
- * <code>
+ * @par Example:
+ * @code
  * $wgAutoConfirmCount = 50;
- * </code>
+ * @endcode
  */
 $wgAutoConfirmCount = 0;
 
 /**
- * Automatically add a usergroup to any user who matches certain conditions.
- * The format is
- *   array( '&' or '|' or '^', cond1, cond2, ... )
- * where cond1, cond2, ... are themselves conditions; *OR*
- *   APCOND_EMAILCONFIRMED, *OR*
- *   array( APCOND_EMAILCONFIRMED ), *OR*
- *   array( APCOND_EDITCOUNT, number of edits ), *OR*
- *   array( APCOND_AGE, seconds since registration ), *OR*
- *   array( APCOND_INGROUPS, group1, group2, ... ), *OR*
- *   array( APCOND_ISIP, ip ), *OR*
- *   array( APCOND_IPINRANGE, range ), *OR*
- *   array( APCOND_AGE_FROM_EDIT, seconds since first edit ), *OR*
- *   array( APCOND_BLOCKED ), *OR*
- *   similar constructs defined by extensions.
+ * Array containing the conditions of automatic promotion of a user to specific groups.
  *
- * If $wgEmailAuthentication is off, APCOND_EMAILCONFIRMED will be true for any
+ * The basic syntax for `$wgAutopromote` is:
+ *
+ *     $wgAutopromote = array(
+ *         'groupname' => cond,
+ *         'group2' => cond2,
+ *     );
+ *
+ * A `cond` may be:
+ *  - a single condition without arguments:
+ *      Note that Autopromote wraps a single non-array value into an array
+ *      e.g. `APCOND_EMAILCONFIRMED` OR
+ *           array( `APCOND_EMAILCONFIRMED` )
+ *  - a single condition with arguments:
+ *      e.g. `array( APCOND_EDITCOUNT, 100 )`
+ *  - a set of conditions:
+ *      e.g. `array( 'operand', cond1, cond2, ... )`
+ *
+ * When constructing a set of conditions, the following conditions are available:
+ *  - `&` (**AND**):
+ *      promote if user matches **ALL** conditions
+ *  - `|` (**OR**):
+ *      promote if user matches **ANY** condition
+ *  - `^` (**XOR**):
+ *      promote if user matches **ONLY ONE OF THE CONDITIONS**
+ *  - `!` (**NOT**):
+ *      promote if user matces **NO** condition
+ *  - array( APCOND_EMAILCONFIRMED ):
+ *      true if user has a confirmed e-mail
+ *  - array( APCOND_EDITCOUNT, number of edits ):
+ *      true if user has the at least the number of edits as the passed parameter
+ *  - array( APCOND_AGE, seconds since registration ):
+ *      true if the length of time since the user created his/her account
+ *      is at least the same length of time as the passed parameter
+ *  - array( APCOND_AGE_FROM_EDIT, seconds since first edit ):
+ *      true if the length of time since the user made his/her first edit
+ *      is at least the same length of time as the passed parameter
+ *  - array( APCOND_INGROUPS, group1, group2, ... ):
+ *      true if the user is a member of each of the passed groups
+ *  - array( APCOND_ISIP, ip ):
+ *      true if the user has the passed IP address
+ *  - array( APCOND_IPINRANGE, range ):
+ *      true if the user has an IP address in the range of the passed parameter
+ *  - array( APCOND_BLOCKED ):
+ *      true if the user is blocked
+ *  - array( APCOND_ISBOT ):
+ *      true if the user is a bot
+ *  - similar constructs can be defined by extensions
+ *
+ * The sets of conditions are evaluated recursively, so you can use nested sets of conditions
+ * linked by operands.
+ *
+ * Note that if $wgEmailAuthentication is disabled, APCOND_EMAILCONFIRMED will be true for any
  * user who has provided an e-mail address.
  */
-$wgAutopromote = array(
-	'autoconfirmed' => array( '&',
-		array( APCOND_EDITCOUNT, &$wgAutoConfirmCount ),
-		array( APCOND_AGE, &$wgAutoConfirmAge ),
-	),
-);
+$wgAutopromote = [
+	'autoconfirmed' => [ '&',
+		[ APCOND_EDITCOUNT, &$wgAutoConfirmCount ],
+		[ APCOND_AGE, &$wgAutoConfirmAge ],
+	],
+];
+
+/**
+ * Automatically add a usergroup to any user who matches certain conditions.
+ *
+ * Does not add the user to the group again if it has been removed.
+ * Also, does not remove the group if the user no longer meets the criteria.
+ *
+ * The format is:
+ * @code
+ *    [ event => criteria, ... ]
+ * @endcode
+ * Where event is either:
+ *    - 'onEdit' (when user edits)
+ *
+ * Criteria has the same format as $wgAutopromote
+ *
+ * @see $wgAutopromote
+ * @since 1.18
+ */
+$wgAutopromoteOnce = [
+	'onEdit' => [],
+];
+
+/**
+ * Put user rights log entries for autopromotion in recent changes?
+ * @since 1.18
+ */
+$wgAutopromoteOnceLogInRC = true;
 
 /**
  * $wgAddGroups and $wgRemoveGroups can be used to give finer control over who
- * can assign which groups at Special:Userrights.  Example configuration:
+ * can assign which groups at Special:Userrights.
  *
+ * @par Example:
+ * Bureaucrats can add any group:
  * @code
- * // Bureaucrat can add any group
  * $wgAddGroups['bureaucrat'] = true;
- * // Bureaucrats can only remove bots and sysops
- * $wgRemoveGroups['bureaucrat'] = array( 'bot', 'sysop' );
- * // Sysops can make bots
- * $wgAddGroups['sysop'] = array( 'bot' );
- * // Sysops can disable other sysops in an emergency, and disable bots
- * $wgRemoveGroups['sysop'] = array( 'sysop', 'bot' );
+ * @endcode
+ * Bureaucrats can only remove bots and sysops:
+ * @code
+ * $wgRemoveGroups['bureaucrat'] = [ 'bot', 'sysop' ];
+ * @endcode
+ * Sysops can make bots:
+ * @code
+ * $wgAddGroups['sysop'] = [ 'bot' ];
+ * @endcode
+ * Sysops can disable other sysops in an emergency, and disable bots:
+ * @code
+ * $wgRemoveGroups['sysop'] = [ 'sysop', 'bot' ];
  * @endcode
  */
-$wgAddGroups = array();
-/** @see $wgAddGroups */
-$wgRemoveGroups = array();
+$wgAddGroups = [];
+
+/**
+ * @see $wgAddGroups
+ */
+$wgRemoveGroups = [];
 
 /**
  * A list of available rights, in addition to the ones defined by the core.
  * For extensions only.
  */
-$wgAvailableRights = array();
+$wgAvailableRights = [];
 
 /**
  * Optional to restrict deletion of pages with higher revision counts
@@ -3575,9 +5507,40 @@ $wgAvailableRights = array();
  */
 $wgDeleteRevisionsLimit = 0;
 
-/** Number of accounts each IP address may create, 0 to disable.
- * Requires memcached */
-$wgAccountCreationThrottle = 0;
+/**
+ * The maximum number of edits a user can have and
+ * can still be hidden by users with the hideuser permission.
+ * This is limited for performance reason.
+ * Set to false to disable the limit.
+ * @since 1.23
+ */
+$wgHideUserContribLimit = 1000;
+
+/**
+ * Number of accounts each IP address may create per specified period(s).
+ *
+ * @par Example:
+ * @code
+ * $wgAccountCreationThrottle = [
+ *  // no more than 100 per month
+ *  [
+ *   'count' => 100,
+ *   'seconds' => 30*86400,
+ *  ],
+ *  // no more than 10 per day
+ *  [
+ *   'count' => 10,
+ *   'seconds' => 86400,
+ *  ],
+ * ];
+ * @endcode
+ *
+ * @warning Requires $wgMainCacheType to be enabled
+ */
+$wgAccountCreationThrottle = [ [
+	'count' => 0,
+	'seconds' => 86400,
+] ];
 
 /**
  * Edits matching these regular expressions in body text
@@ -3586,111 +5549,380 @@ $wgAccountCreationThrottle = 0;
  * There's no administrator override on-wiki, so be careful what you set. :)
  * May be an array of regexes or a single string for backwards compatibility.
  *
- * See http://en.wikipedia.org/wiki/Regular_expression
- * Note that each regex needs a beginning/end delimiter, eg: # or /
- */
-$wgSpamRegex = array();
-
-/** Same as the above except for edit summaries */
-$wgSummarySpamRegex = array();
-
-/**
- * Similarly you can get a function to do the job. The function will be given
- * the following args:
- *   - a Title object for the article the edit is made on
- *   - the text submitted in the textarea (wpTextbox1)
- *   - the section number.
- * The return should be boolean indicating whether the edit matched some evilness:
- *  - true : block it
- *  - false : let it through
+ * @see https://en.wikipedia.org/wiki/Regular_expression
  *
- * @deprecated since 1.17 Use hooks. See SpamBlacklist extension.
+ * @note Each regex needs a beginning/end delimiter, eg: # or /
  */
-$wgFilterCallback = false;
+$wgSpamRegex = [];
 
 /**
- * Whether to use DNS blacklists in $wgDnsBlacklistUrls to check for open proxies
+ * Same as the above except for edit summaries
+ */
+$wgSummarySpamRegex = [];
+
+/**
+ * Whether to use DNS blacklists in $wgDnsBlacklistUrls to check for open
+ * proxies
  * @since 1.16
  */
 $wgEnableDnsBlacklist = false;
 
 /**
- * @deprecated since 1.17 Use $wgEnableDnsBlacklist instead, only kept for backward
- *  compatibility
- */
-$wgEnableSorbs = false;
-
-/**
- * List of DNS blacklists to use, if $wgEnableDnsBlacklist is true
+ * List of DNS blacklists to use, if $wgEnableDnsBlacklist is true.
+ *
+ * This is an array of either a URL or an array with the URL and a key (should
+ * the blacklist require a key).
+ *
+ * @par Example:
+ * @code
+ * $wgDnsBlacklistUrls = [
+ *   // String containing URL
+ *   'http.dnsbl.sorbs.net.',
+ *   // Array with URL and key, for services that require a key
+ *   [ 'dnsbl.httpbl.net.', 'mykey' ],
+ *   // Array with just the URL. While this works, it is recommended that you
+ *   // just use a string as shown above
+ *   [ 'opm.tornevall.org.' ]
+ * ];
+ * @endcode
+ *
+ * @note You should end the domain name with a . to avoid searching your
+ * eventual domain search suffixes.
  * @since 1.16
  */
-$wgDnsBlacklistUrls = array( 'http.dnsbl.sorbs.net.' );
-
-/**
- * @deprecated since 1.17 Use $wgDnsBlacklistUrls instead, only kept for backward
- *  compatibility
- */
-$wgSorbsUrl = array();
+$wgDnsBlacklistUrls = [ 'http.dnsbl.sorbs.net.' ];
 
 /**
  * Proxy whitelist, list of addresses that are assumed to be non-proxy despite
  * what the other methods might say.
  */
-$wgProxyWhitelist = array();
+$wgProxyWhitelist = [];
 
 /**
- * Simple rate limiter options to brake edit floods.  Maximum number actions
- * allowed in the given number of seconds; after that the violating client re-
- * ceives HTTP 500 error pages until the period elapses.
- *
- * array( 4, 60 ) for a maximum of 4 hits in 60 seconds.
- *
- * This option set is experimental and likely to change. Requires memcached.
+ * IP ranges that should be considered soft-blocked (anon-only, account
+ * creation allowed). The intent is to use this to prevent anonymous edits from
+ * shared resources such as Wikimedia Labs.
+ * @since 1.29
+ * @var string[]
  */
-$wgRateLimits = array(
-	'edit' => array(
-		'anon'   => null, // for any and all anonymous edits (aggregate)
-		'user'   => null, // for each logged-in user
-		'newbie' => null, // for each recent (autoconfirmed) account; overrides 'user'
-		'ip'     => null, // for each anon and recent account
-		'subnet' => null, // ... with final octet removed
-		),
-	'move' => array(
-		'user'   => null,
-		'newbie' => null,
-		'ip'     => null,
-		'subnet' => null,
-		),
-	'mailpassword' => array(
-		'anon' => null,
-		),
-	'emailuser' => array(
-		'user' => null,
-		),
-	);
+$wgSoftBlockRanges = [];
 
 /**
- * Set to a filename to log rate limiter hits.
+ * Whether to look at the X-Forwarded-For header's list of (potentially spoofed)
+ * IPs and apply IP blocks to them. This allows for IP blocks to work with correctly-configured
+ * (transparent) proxies without needing to block the proxies themselves.
  */
-$wgRateLimitLog = null;
+$wgApplyIpBlocksToXff = false;
 
 /**
- * Array of IPs which should be excluded from rate limits.
+ * Simple rate limiter options to brake edit floods.
+ *
+ * Maximum number actions allowed in the given number of seconds; after that
+ * the violating client receives HTTP 500 error pages until the period
+ * elapses.
+ *
+ * @par Example:
+ * Limits per configured per action and then type of users.
+ * @code
+ *     $wgRateLimits = [
+ *         'edit' => [
+ *             'anon' => [ x, y ], // any and all anonymous edits (aggregate)
+ *             'user' => [ x, y ], // each logged-in user
+ *             'newbie' => [ x, y ], // each new autoconfirmed accounts; overrides 'user'
+ *             'ip' => [ x, y ], // each anon and recent account
+ *             'subnet' => [ x, y ], // ... within a /24 subnet in IPv4 or /64 in IPv6
+ *             'groupName' => [ x, y ], // by group membership
+ *         ]
+ *     ];
+ * @endcode
+ *
+ * @par Normally, the 'noratelimit' right allows a user to bypass any rate
+ * limit checks. This can be disabled on a per-action basis by setting the
+ * special '&can-bypass' key to false in that action's configuration.
+ * @code
+ *     $wgRateLimits = [
+ *         'some-action' => [
+ *             '&can-bypass' => false,
+ *             'user' => [ x, y ],
+ *     ];
+ * @endcode
+ *
+ * @warning Requires that $wgMainCacheType is set to something persistent
+ */
+$wgRateLimits = [
+	// Page edits
+	'edit' => [
+		'ip' => [ 8, 60 ],
+		'newbie' => [ 8, 60 ],
+		'user' => [ 90, 60 ],
+	],
+	// Page moves
+	'move' => [
+		'newbie' => [ 2, 120 ],
+		'user' => [ 8, 60 ],
+	],
+	// File uploads
+	'upload' => [
+		'ip' => [ 8, 60 ],
+		'newbie' => [ 8, 60 ],
+	],
+	// Page rollbacks
+	'rollback' => [
+		'user' => [ 10, 60 ],
+		'newbie' => [ 5, 120 ]
+	],
+	// Triggering password resets emails
+	'mailpassword' => [
+		'ip' => [ 5, 3600 ],
+	],
+	// Emailing other users using MediaWiki
+	'emailuser' => [
+		'ip' => [ 5, 86400 ],
+		'newbie' => [ 5, 86400 ],
+		'user' => [ 20, 86400 ],
+	],
+	// Purging pages
+	'purge' => [
+		'ip' => [ 30, 60 ],
+		'user' => [ 30, 60 ],
+	],
+	// Purges of link tables
+	'linkpurge' => [
+		'ip' => [ 30, 60 ],
+		'user' => [ 30, 60 ],
+	],
+	// Files rendered via thumb.php or thumb_handler.php
+	'renderfile' => [
+		'ip' => [ 700, 30 ],
+		'user' => [ 700, 30 ],
+	],
+	// Same as above but for non-standard thumbnails
+	'renderfile-nonstandard' => [
+		'ip' => [ 70, 30 ],
+		'user' => [ 70, 30 ],
+	],
+	// Stashing edits into cache before save
+	'stashedit' => [
+		'ip' => [ 30, 60 ],
+		'newbie' => [ 30, 60 ],
+	],
+	// Adding or removing change tags
+	'changetag' => [
+		'ip' => [ 8, 60 ],
+		'newbie' => [ 8, 60 ],
+	],
+	// Changing the content model of a page
+	'editcontentmodel' => [
+		'newbie' => [ 2, 120 ],
+		'user' => [ 8, 60 ],
+	],
+];
+
+/**
+ * Array of IPs / CIDR ranges which should be excluded from rate limits.
  * This may be useful for whitelisting NAT gateways for conferences, etc.
  */
-$wgRateLimitsExcludedIPs = array();
+$wgRateLimitsExcludedIPs = [];
 
 /**
  * Log IP addresses in the recentchanges table; can be accessed only by
  * extensions (e.g. CheckUser) or a DB admin
+ * Used for retroactive autoblocks
  */
 $wgPutIPinRC = true;
 
 /**
- * Limit password attempts to X attempts per Y seconds per IP per account.
- * Requires memcached.
+ * Integer defining default number of entries to show on
+ * special pages which are query-pages such as Special:Whatlinkshere.
  */
-$wgPasswordAttemptThrottle = array( 'count' => 5, 'seconds' => 300 );
+$wgQueryPageDefaultLimit = 50;
+
+/**
+ * Limit password attempts to X attempts per Y seconds per IP per account.
+ *
+ * Value is an array of arrays. Each sub-array must have a key for count
+ * (ie count of how many attempts before throttle) and a key for seconds.
+ * If the key 'allIPs' (case sensitive) is present, then the limit is
+ * just per account instead of per IP per account.
+ *
+ * @since 1.27 allIps support and multiple limits added in 1.27. Prior
+ *   to 1.27 this only supported having a single throttle.
+ * @warning Requires $wgMainCacheType to be enabled
+ */
+$wgPasswordAttemptThrottle = [
+	// Short term limit
+	[ 'count' => 5, 'seconds' => 300 ],
+	// Long term limit. We need to balance the risk
+	// of somebody using this as a DoS attack to lock someone
+	// out of their account, and someone doing a brute force attack.
+	[ 'count' => 150, 'seconds' => 60 * 60 * 48 ],
+];
+
+/**
+ * @var array Map of (grant => right => boolean)
+ * Users authorize consumers (like Apps) to act on their behalf but only with
+ * a subset of the user's normal account rights (signed off on by the user).
+ * The possible rights to grant to a consumer are bundled into groups called
+ * "grants". Each grant defines some rights it lets consumers inherit from the
+ * account they may act on behalf of. Note that a user granting a right does
+ * nothing if that user does not actually have that right to begin with.
+ * @since 1.27
+ */
+$wgGrantPermissions = [];
+
+// @TODO: clean up grants
+// @TODO: auto-include read/editsemiprotected rights?
+
+$wgGrantPermissions['basic']['autoconfirmed'] = true;
+$wgGrantPermissions['basic']['autopatrol'] = true;
+$wgGrantPermissions['basic']['editsemiprotected'] = true;
+$wgGrantPermissions['basic']['ipblock-exempt'] = true;
+$wgGrantPermissions['basic']['nominornewtalk'] = true;
+$wgGrantPermissions['basic']['patrolmarks'] = true;
+$wgGrantPermissions['basic']['purge'] = true;
+$wgGrantPermissions['basic']['read'] = true;
+$wgGrantPermissions['basic']['skipcaptcha'] = true;
+$wgGrantPermissions['basic']['writeapi'] = true;
+
+$wgGrantPermissions['highvolume']['bot'] = true;
+$wgGrantPermissions['highvolume']['apihighlimits'] = true;
+$wgGrantPermissions['highvolume']['noratelimit'] = true;
+$wgGrantPermissions['highvolume']['markbotedits'] = true;
+
+$wgGrantPermissions['editpage']['edit'] = true;
+$wgGrantPermissions['editpage']['minoredit'] = true;
+$wgGrantPermissions['editpage']['applychangetags'] = true;
+$wgGrantPermissions['editpage']['changetags'] = true;
+
+$wgGrantPermissions['editprotected'] = $wgGrantPermissions['editpage'];
+$wgGrantPermissions['editprotected']['editprotected'] = true;
+
+// FIXME: Rename editmycssjs to editmyconfig
+$wgGrantPermissions['editmycssjs'] = $wgGrantPermissions['editpage'];
+$wgGrantPermissions['editmycssjs']['editmyusercss'] = true;
+$wgGrantPermissions['editmycssjs']['editmyuserjson'] = true;
+$wgGrantPermissions['editmycssjs']['editmyuserjs'] = true;
+
+$wgGrantPermissions['editmyoptions']['editmyoptions'] = true;
+
+$wgGrantPermissions['editinterface'] = $wgGrantPermissions['editpage'];
+$wgGrantPermissions['editinterface']['editinterface'] = true;
+$wgGrantPermissions['editinterface']['editusercss'] = true;
+$wgGrantPermissions['editinterface']['edituserjson'] = true;
+$wgGrantPermissions['editinterface']['edituserjs'] = true;
+
+$wgGrantPermissions['createeditmovepage'] = $wgGrantPermissions['editpage'];
+$wgGrantPermissions['createeditmovepage']['createpage'] = true;
+$wgGrantPermissions['createeditmovepage']['createtalk'] = true;
+$wgGrantPermissions['createeditmovepage']['move'] = true;
+$wgGrantPermissions['createeditmovepage']['move-rootuserpages'] = true;
+$wgGrantPermissions['createeditmovepage']['move-subpages'] = true;
+$wgGrantPermissions['createeditmovepage']['move-categorypages'] = true;
+
+$wgGrantPermissions['uploadfile']['upload'] = true;
+$wgGrantPermissions['uploadfile']['reupload-own'] = true;
+
+$wgGrantPermissions['uploadeditmovefile'] = $wgGrantPermissions['uploadfile'];
+$wgGrantPermissions['uploadeditmovefile']['reupload'] = true;
+$wgGrantPermissions['uploadeditmovefile']['reupload-shared'] = true;
+$wgGrantPermissions['uploadeditmovefile']['upload_by_url'] = true;
+$wgGrantPermissions['uploadeditmovefile']['movefile'] = true;
+$wgGrantPermissions['uploadeditmovefile']['suppressredirect'] = true;
+
+$wgGrantPermissions['patrol']['patrol'] = true;
+
+$wgGrantPermissions['rollback']['rollback'] = true;
+
+$wgGrantPermissions['blockusers']['block'] = true;
+$wgGrantPermissions['blockusers']['blockemail'] = true;
+
+$wgGrantPermissions['viewdeleted']['browsearchive'] = true;
+$wgGrantPermissions['viewdeleted']['deletedhistory'] = true;
+$wgGrantPermissions['viewdeleted']['deletedtext'] = true;
+
+$wgGrantPermissions['viewrestrictedlogs']['suppressionlog'] = true;
+
+$wgGrantPermissions['delete'] = $wgGrantPermissions['editpage'] +
+	$wgGrantPermissions['viewdeleted'];
+$wgGrantPermissions['delete']['delete'] = true;
+$wgGrantPermissions['delete']['bigdelete'] = true;
+$wgGrantPermissions['delete']['deletelogentry'] = true;
+$wgGrantPermissions['delete']['deleterevision'] = true;
+$wgGrantPermissions['delete']['undelete'] = true;
+
+$wgGrantPermissions['protect'] = $wgGrantPermissions['editprotected'];
+$wgGrantPermissions['protect']['protect'] = true;
+
+$wgGrantPermissions['viewmywatchlist']['viewmywatchlist'] = true;
+
+$wgGrantPermissions['editmywatchlist']['editmywatchlist'] = true;
+
+$wgGrantPermissions['sendemail']['sendemail'] = true;
+
+$wgGrantPermissions['createaccount']['createaccount'] = true;
+
+$wgGrantPermissions['privateinfo']['viewmyprivateinfo'] = true;
+
+/**
+ * @var array Map of grants to their UI grouping
+ * @since 1.27
+ */
+$wgGrantPermissionGroups = [
+	// Hidden grants are implicitly present
+	'basic'            => 'hidden',
+
+	'editpage'            => 'page-interaction',
+	'createeditmovepage'  => 'page-interaction',
+	'editprotected'       => 'page-interaction',
+	'patrol'              => 'page-interaction',
+
+	'uploadfile'          => 'file-interaction',
+	'uploadeditmovefile'  => 'file-interaction',
+
+	'sendemail'           => 'email',
+
+	'viewmywatchlist'     => 'watchlist-interaction',
+	'editviewmywatchlist' => 'watchlist-interaction',
+
+	'editmycssjs'         => 'customization',
+	'editmyoptions'       => 'customization',
+
+	'editinterface'       => 'administration',
+	'rollback'            => 'administration',
+	'blockusers'          => 'administration',
+	'delete'              => 'administration',
+	'viewdeleted'         => 'administration',
+	'viewrestrictedlogs'  => 'administration',
+	'protect'             => 'administration',
+	'createaccount'       => 'administration',
+
+	'highvolume'          => 'high-volume',
+
+	'privateinfo'         => 'private-information',
+];
+
+/**
+ * @var bool Whether to enable bot passwords
+ * @since 1.27
+ */
+$wgEnableBotPasswords = true;
+
+/**
+ * Cluster for the bot_passwords table
+ * @var string|bool If false, the normal cluster will be used
+ * @since 1.27
+ */
+$wgBotPasswordsCluster = false;
+
+/**
+ * Database name for the bot_passwords table
+ *
+ * To use a database with a table prefix, set this variable to
+ * "{$database}-{$prefix}".
+ * @var string|bool If false, the normal database will be used
+ * @since 1.27
+ */
+$wgBotPasswordsDatabase = false;
 
 /** @} */ # end of user rights settings
 
@@ -3700,27 +5932,20 @@ $wgPasswordAttemptThrottle = array( 'count' => 5, 'seconds' => 300 );
  */
 
 /**
- * If you enable this, every editor's IP address will be scanned for open HTTP
- * proxies.
- *
- * Don't enable this. Many sysops will report "hostile TCP port scans" to your
- * ISP and ask for your server to be shut down.
- *
- * You have been warned.
+ * This should always be customised in LocalSettings.php
  */
-$wgBlockOpenProxies = false;
-/** Port we want to scan for a proxy */
-$wgProxyPorts = array( 80, 81, 1080, 3128, 6588, 8000, 8080, 8888, 65506 );
-/** Script used to scan */
-$wgProxyScriptPath = "$IP/maintenance/proxy_check.php";
-/** */
-$wgProxyMemcExpiry = 86400;
-/** This should always be customised in LocalSettings.php */
 $wgSecretKey = false;
-/** big list of banned IP addresses, in the keys not the values */
-$wgProxyList = array();
-/** deprecated */
-$wgProxyKey = false;
+
+/**
+ * Big list of banned IP addresses.
+ *
+ * This can have the following formats:
+ * - An array of addresses, either in the values
+ *   or the keys (for backward compatibility, deprecated since 1.30)
+ * - A string, in that case this is the path to a file
+ *   containing the list of IP addresses, one per line
+ */
+$wgProxyList = [];
 
 /** @} */ # end of proxy scanner settings
 
@@ -3730,22 +5955,50 @@ $wgProxyKey = false;
  */
 
 /**
- * Default cookie expiration time. Setting to 0 makes all cookies session-only.
+ * Default cookie lifetime, in seconds. Setting to 0 makes all cookies session-only.
  */
-$wgCookieExpiration = 30*86400;
+$wgCookieExpiration = 30 * 86400;
+
+/**
+ * Default login cookie lifetime, in seconds. Setting
+ * $wgExtendLoginCookieExpiration to null will use $wgCookieExpiration to
+ * calculate the cookie lifetime. As with $wgCookieExpiration, 0 will make
+ * login cookies session-only.
+ */
+$wgExtendedLoginCookieExpiration = 180 * 86400;
 
 /**
  * Set to set an explicit domain on the login cookies eg, "justthis.domain.org"
  * or ".any.subdomain.net"
  */
 $wgCookieDomain = '';
+
+/**
+ * Set this variable if you want to restrict cookies to a certain path within
+ * the domain specified by $wgCookieDomain.
+ */
 $wgCookiePath = '/';
-$wgCookieSecure = ($wgProto == 'https');
+
+/**
+ * Whether the "secure" flag should be set on the cookie. This can be:
+ *   - true:      Set secure flag
+ *   - false:     Don't set secure flag
+ *   - "detect":  Set the secure flag if $wgServer is set to an HTTPS URL
+ */
+$wgCookieSecure = 'detect';
+
+/**
+ * By default, MediaWiki checks if the client supports cookies during the
+ * login process, so that it can display an informative error message if
+ * cookies are disabled. Set this to true if you want to disable this cookie
+ * check.
+ */
 $wgDisableCookieCheck = false;
 
 /**
- * Set $wgCookiePrefix to use a custom one. Setting to false sets the default of
- * using the database name.
+ * Cookies generated by MediaWiki have names starting with this prefix. Set it
+ * to a string to use a custom prefix. Setting it to false causes the database
+ * name to be used as a prefix.
  */
 $wgCookiePrefix = false;
 
@@ -3757,23 +6010,25 @@ $wgCookiePrefix = false;
 $wgCookieHttpOnly = true;
 
 /**
- * If the requesting browser matches a regex in this blacklist, we won't
- * send it cookies with HttpOnly mode, even if $wgCookieHttpOnly is on.
+ * A list of cookies that vary the cache (for use by extensions)
  */
-$wgHttpOnlyBlacklist = array(
-	// Internet Explorer for Mac; sometimes the cookies work, sometimes
-	// they don't. It's difficult to predict, as combinations of path
-	// and expiration options affect its parsing.
-	'/^Mozilla\/4\.0 \(compatible; MSIE \d+\.\d+; Mac_PowerPC\)/',
-);
+$wgCacheVaryCookies = [];
 
-/** A list of cookies that vary the cache (for use by extensions) */
-$wgCacheVaryCookies = array();
-
-/** Override to customise the session name */
+/**
+ * Override to customise the session name
+ */
 $wgSessionName = false;
 
-/** @} */  # end of cookie settings }
+/**
+ * Whether to set a cookie when a user is autoblocked. Doing so means that a blocked user, even
+ * after logging out and moving to a new IP address, will still be blocked. This cookie will contain
+ * an authentication code if $wgSecretKey is set, or otherwise will just be the block ID (in
+ * which case there is a possibility of an attacker discovering the names of revdeleted users, so
+ * it is best to use this in conjunction with $wgSecretKey being set).
+ */
+$wgCookieSetOnAutoblock = false;
+
+/** @} */ # end of cookie settings }
 
 /************************************************************************//**
  * @name   LaTeX (mathematical formulas)
@@ -3788,7 +6043,7 @@ $wgSessionName = false;
  */
 $wgUseTeX = false;
 
-/* @} */ # end LaTeX }
+/** @} */ # end LaTeX }
 
 /************************************************************************//**
  * @name   Profiling, testing and debugging
@@ -3799,63 +6054,171 @@ $wgUseTeX = false;
  */
 
 /**
- * Filename for debug logging. See http://www.mediawiki.org/wiki/How_to_debug
+ * Filename for debug logging. See https://www.mediawiki.org/wiki/How_to_debug
  * The debug log file should be not be publicly accessible if it is used, as it
  * may contain private data.
  */
-$wgDebugLogFile         = '';
+$wgDebugLogFile = '';
 
 /**
  * Prefix for debug log lines
  */
-$wgDebugLogPrefix       = '';
+$wgDebugLogPrefix = '';
 
 /**
  * If true, instead of redirecting, show a page with a link to the redirect
  * destination. This allows for the inspection of PHP error messages, and easy
  * resubmission of form data. For developer use only.
  */
-$wgDebugRedirects		= false;
+$wgDebugRedirects = false;
 
 /**
- * If true, log debugging data from action=raw.
- * This is normally false to avoid overlapping debug entries due to gen=css and
- * gen=js requests.
+ * If true, log debugging data from action=raw and load.php.
+ * This is normally false to avoid overlapping debug entries due to gen=css
+ * and gen=js requests.
  */
-$wgDebugRawPage         = false;
+$wgDebugRawPage = false;
 
 /**
  * Send debug data to an HTML comment in the output.
  *
- * This may occasionally be useful when supporting a non-technical end-user. It's
- * more secure than exposing the debug log file to the web, since the output only
- * contains private data for the current user. But it's not ideal for development
- * use since data is lost on fatal errors and redirects.
+ * This may occasionally be useful when supporting a non-technical end-user.
+ * It's more secure than exposing the debug log file to the web, since the
+ * output only contains private data for the current user. But it's not ideal
+ * for development use since data is lost on fatal errors and redirects.
  */
-$wgDebugComments        = false;
+$wgDebugComments = false;
 
 /**
- * Write SQL queries to the debug log
+ * Write SQL queries to the debug log.
+ *
+ * This setting is only used $wgLBFactoryConf['class'] is set to
+ * '\Wikimedia\Rdbms\LBFactorySimple' and $wgDBservers is an empty array; otherwise
+ * the DBO_DEBUG flag must be set in the 'flags' option of the database
+ * connection to achieve the same functionality.
  */
-$wgDebugDumpSql         = false;
+$wgDebugDumpSql = false;
 
 /**
- * Set to an array of log group keys to filenames.
+ * Performance expectations for DB usage
+ *
+ * @since 1.26
+ */
+$wgTrxProfilerLimits = [
+	// HTTP GET/HEAD requests.
+	// Master queries should not happen on GET requests
+	'GET' => [
+		'masterConns' => 0,
+		'writes' => 0,
+		'readQueryTime' => 5
+	],
+	// HTTP POST requests.
+	// Master reads and writes will happen for a subset of these.
+	'POST' => [
+		'readQueryTime' => 5,
+		'writeQueryTime' => 1,
+		'maxAffected' => 1000
+	],
+	'POST-nonwrite' => [
+		'masterConns' => 0,
+		'writes' => 0,
+		'readQueryTime' => 5
+	],
+	// Deferred updates that run after HTTP response is sent for GET requests
+	'PostSend-GET' => [
+		'readQueryTime' => 5,
+		'writeQueryTime' => 1,
+		'maxAffected' => 1000,
+		// Log master queries under the post-send entry point as they are discouraged
+		'masterConns' => 0,
+		'writes' => 0,
+	],
+	// Deferred updates that run after HTTP response is sent for POST requests
+	'PostSend-POST' => [
+		'readQueryTime' => 5,
+		'writeQueryTime' => 1,
+		'maxAffected' => 1000
+	],
+	// Background job runner
+	'JobRunner' => [
+		'readQueryTime' => 30,
+		'writeQueryTime' => 5,
+		'maxAffected' => 500 // ballpark of $wgUpdateRowsPerQuery
+	],
+	// Command-line scripts
+	'Maintenance' => [
+		'writeQueryTime' => 5,
+		'maxAffected' => 1000
+	]
+];
+
+/**
+ * Map of string log group names to log destinations.
+ *
  * If set, wfDebugLog() output for that group will go to that file instead
  * of the regular $wgDebugLogFile. Useful for enabling selective logging
  * in production.
+ *
+ * Log destinations may be one of the following:
+ * - false to completely remove from the output, including from $wgDebugLogFile.
+ * - string values specifying a filename or URI.
+ * - associative array with keys:
+ *   - 'destination' desired filename or URI.
+ *   - 'sample' an integer value, specifying a sampling factor (optional)
+ *   - 'level' A \Psr\Log\LogLevel constant, indicating the minimum level
+ *             to log (optional, since 1.25)
+ *
+ * @par Example:
+ * @code
+ * $wgDebugLogGroups['redis'] = '/var/log/mediawiki/redis.log';
+ * @endcode
+ *
+ * @par Advanced example:
+ * @code
+ * $wgDebugLogGroups['memcached'] = [
+ *     'destination' => '/var/log/mediawiki/memcached.log',
+ *     'sample' => 1000,  // log 1 message out of every 1,000.
+ *     'level' => \Psr\Log\LogLevel::WARNING
+ * ];
+ * @endcode
  */
-$wgDebugLogGroups       = array();
+$wgDebugLogGroups = [];
+
+/**
+ * Default service provider for creating Psr\Log\LoggerInterface instances.
+ *
+ * The value should be an array suitable for use with
+ * ObjectFactory::getObjectFromSpec(). The created object is expected to
+ * implement the MediaWiki\Logger\Spi interface. See ObjectFactory for additional
+ * details.
+ *
+ * Alternately the MediaWiki\Logger\LoggerFactory::registerProvider method can
+ * be called to inject an MediaWiki\Logger\Spi instance into the LoggerFactory
+ * and bypass the use of this configuration variable entirely.
+ *
+ * @par To completely disable logging:
+ * @code
+ * $wgMWLoggerDefaultSpi = [ 'class' => \MediaWiki\Logger\NullSpi::class ];
+ * @endcode
+ *
+ * @since 1.25
+ * @var array $wgMWLoggerDefaultSpi
+ * @see MwLogger
+ */
+$wgMWLoggerDefaultSpi = [
+	'class' => \MediaWiki\Logger\LegacySpi::class,
+];
 
 /**
  * Display debug data at the bottom of the main content area.
  *
  * Useful for developers and technical users trying to working on a closed wiki.
  */
-$wgShowDebug            = false;
+$wgShowDebug = false;
 
 /**
  * Prefix debug messages with relative timestamp. Very-poor man's profiler.
+ * Since 1.19 also includes memory usage.
  */
 $wgDebugTimestamps = false;
 
@@ -3867,14 +6230,14 @@ $wgDebugPrintHttpHeaders = true;
 /**
  * Show the contents of $wgHooks in Special:Version
  */
-$wgSpecialVersionShowHooks =  false;
+$wgSpecialVersionShowHooks = false;
 
 /**
  * Whether to show "we're sorry, but there has been a database error" pages.
  * Displaying errors aids in debugging, but may display information useful
  * to an attacker.
  */
-$wgShowSQLErrors        = false;
+$wgShowSQLErrors = false;
 
 /**
  * If set to true, uncaught exceptions will print a complete stack trace
@@ -3886,8 +6249,24 @@ $wgShowExceptionDetails = false;
 
 /**
  * If true, show a backtrace for database errors
+ *
+ * @note This setting only applies when connection errors and query errors are
+ * reported in the normal manner. $wgShowExceptionDetails applies in other cases,
+ * including those in which an uncaught exception is thrown from within the
+ * exception handler.
  */
 $wgShowDBErrorBacktrace = false;
+
+/**
+ * If true, send the exception backtrace to the error log
+ */
+$wgLogExceptionBacktrace = true;
+
+/**
+ * If true, the MediaWiki error handler passes errors/warnings to the default error handler
+ * after logging them. The setting is ignored when the track_errors php.ini flag is true.
+ */
+$wgPropagateErrors = true;
 
 /**
  * Expose backend server host names through the API and various HTML comments
@@ -3895,110 +6274,119 @@ $wgShowDBErrorBacktrace = false;
 $wgShowHostnames = false;
 
 /**
+ * Override server hostname detection with a hardcoded value.
+ * Should be a string, default false.
+ * @since 1.20
+ */
+$wgOverrideHostname = false;
+
+/**
  * If set to true MediaWiki will throw notices for some possible error
  * conditions and for deprecated functions.
  */
 $wgDevelopmentWarnings = false;
 
-/** Only record profiling info for pages that took longer than this */
+/**
+ * Release limitation to wfDeprecated warnings, if set to a release number
+ * development warnings will not be generated for deprecations added in releases
+ * after the limit.
+ */
+$wgDeprecationReleaseLimit = false;
+
+/**
+ * Only record profiling info for pages that took longer than this
+ * @deprecated since 1.25: set $wgProfiler['threshold'] instead.
+ */
 $wgProfileLimit = 0.0;
 
-/** Don't put non-profiling info into log file */
+/**
+ * Don't put non-profiling info into log file
+ *
+ * @deprecated since 1.23, set the log file in
+ *   $wgDebugLogGroups['profileoutput'] instead.
+ */
 $wgProfileOnly = false;
 
 /**
- * Log sums from profiling into "profiling" table in db.
+ * Destination of statsd metrics.
  *
- * You have to create a 'profiling' table in your database before using
- * this feature, see maintenance/archives/patch-profiling.sql
+ * A host or host:port of a statsd server. Port defaults to 8125.
  *
- * To enable profiling, edit StartProfiler.php
+ * If not set, statsd metrics will not be collected.
+ *
+ * @see wfLogProfilingData
+ * @since 1.25
  */
-$wgProfileToDatabase = false;
-
-/** If true, print a raw call tree instead of per-function report */
-$wgProfileCallTree = false;
-
-/** Should application server host be put into profiling table */
-$wgProfilePerHost = false;
+$wgStatsdServer = false;
 
 /**
- * Host for UDP profiler.
+ * Prefix for metric names sent to $wgStatsdServer.
  *
- * The host should be running a daemon which can be obtained from MediaWiki
- * Subversion at: http://svn.wikimedia.org/svnroot/mediawiki/trunk/udpprofile
+ * @see MediaWikiServices::getStatsdDataFactory
+ * @see BufferingStatsdDataFactory
+ * @since 1.25
  */
-$wgUDPProfilerHost = '127.0.0.1';
+$wgStatsdMetricPrefix = 'MediaWiki';
 
 /**
- * Port for UDP profiler.
- * @see $wgUDPProfilerHost
+ * Sampling rate for statsd metrics as an associative array of patterns and rates.
+ * Patterns are Unix shell patterns (e.g. 'MediaWiki.api.*').
+ * Rates are sampling probabilities (e.g. 0.1 means 1 in 10 events are sampled).
+ * @since 1.28
  */
-$wgUDPProfilerPort = '3811';
-
-/** Detects non-matching wfProfileIn/wfProfileOut calls */
-$wgDebugProfiling = false;
-
-/** Output debug message on every wfProfileIn/wfProfileOut */
-$wgDebugFunctionEntry = 0;
-
-/*
- * Destination for wfIncrStats() data...
- * 'cache' to go into the system cache, if enabled (memcached)
- * 'udp' to be sent to the UDP profiler (see $wgUDPProfilerHost)
- * false to disable
- */
-$wgStatsMethod = 'cache';
+$wgStatsdSamplingRates = [
+	'wanobjectcache:*' => 0.001
+];
 
 /**
- * When $wgStatsMethod is 'udp', setting this to a string allows statistics to 
- * be aggregated over more than one wiki. The string will be used in place of
- * the DB name in outgoing UDP packets. If this is set to false, the DB name
- * will be used.
+ * InfoAction retrieves a list of transclusion links (both to and from).
+ * This number puts a limit on that query in the case of highly transcluded
+ * templates.
  */
-$wgAggregateStatsID = false;
-
-/** Whereas to count the number of time an article is viewed.
- * Does not work if pages are cached (for example with squid).
- */
-$wgDisableCounters = false;
+$wgPageInfoTransclusionLimit = 50;
 
 /**
- * Support blog-style "trackbacks" for articles.  See
- * http://www.sixapart.com/pronet/docs/trackback_spec for details.
- *
- * If enabling this, you also need to grant the 'trackback' right to a group
+ * Set this to an integer to only do synchronous site_stats updates
+ * one every *this many* updates. The other requests go into pending
+ * delta values in $wgMemc. Make sure that $wgMemc is a global cache.
+ * If set to -1, updates *only* go to $wgMemc (useful for daemons).
  */
-$wgUseTrackbacks = false;
+$wgSiteStatsAsyncFactor = false;
 
 /**
  * Parser test suite files to be run by parserTests.php when no specific
  * filename is passed to it.
  *
- * Extensions may add their own tests to this array, or site-local tests
- * may be added via LocalSettings.php
+ * Extensions using extension.json will have any *.txt file in a
+ * tests/parser/ directory automatically run.
+ *
+ * Core tests can be added to ParserTestRunner::$coreTestFiles.
  *
  * Use full paths.
+ *
+ * @deprecated since 1.30
  */
-$wgParserTestFiles = array(
-	"$IP/tests/parser/parserTests.txt",
-	"$IP/tests/parser/extraParserTests.txt"
-);
+$wgParserTestFiles = [];
 
 /**
- * If configured, specifies target CodeReview installation to send test
- * result data from 'parserTests.php --upload'
- *
- * Something like this:
- * $wgParserTestRemote = array(
- *     'api-url' => 'http://www.mediawiki.org/w/api.php',
- *     'repo'    => 'MediaWiki',
- *     'suite'   => 'ParserTests',
- *     'path'    => '/trunk/phase3', // not used client-side; for reference
- *     'secret'  => 'qmoicj3mc4mcklmqw', // Shared secret used in HMAC validation
- * );
+ * Allow running of javascript test suites via [[Special:JavaScriptTest]] (such as QUnit).
  */
-$wgParserTestRemote = false;
+$wgEnableJavaScriptTest = false;
+
+/**
+ * Overwrite the caching key prefix with custom value.
+ * @since 1.19
+ */
+$wgCachePrefix = false;
+
+/**
+ * Display the new debugging toolbar. This also enables profiling on database
+ * queries and other useful output.
+ * Will be ignored if $wgUseFileCache or $wgUseSquid is enabled.
+ *
+ * @since 1.19
+ */
+$wgDebugToolbar = false;
 
 /** @} */ # end of profiling, testing and debugging }
 
@@ -4013,7 +6401,7 @@ $wgParserTestRemote = false;
 $wgDisableTextSearch = false;
 
 /**
- * Set to true to have nicer highligted text in search results,
+ * Set to true to have nicer highlighted text in search results,
  * by default off due to execution overhead
  */
 $wgAdvancedSearchHighlighting = false;
@@ -4025,54 +6413,53 @@ $wgAdvancedSearchHighlighting = false;
 $wgSearchHighlightBoundaries = '[\p{Z}\p{P}\p{C}]';
 
 /**
- * Set to true to have the search engine count total
- * search matches to present in the Special:Search UI.
- * Not supported by every search engine shipped with MW.
- *
- * This could however be slow on larger wikis, and is pretty flaky
- * with the current title vs content split. Recommend avoiding until
- * that's been worked out cleanly; but this may aid in testing the
- * search UI and API to confirm that the result count works.
- */
-$wgCountTotalSearchHits = false;
-
-/**
  * Template for OpenSearch suggestions, defaults to API action=opensearch
  *
- * Sites with heavy load would tipically have these point to a custom
+ * Sites with heavy load would typically have these point to a custom
  * PHP wrapper to avoid firing up mediawiki for every keystroke
  *
  * Placeholders: {searchTerms}
  *
+ * @deprecated since 1.25 Use $wgOpenSearchTemplates['application/x-suggestions+json'] instead
  */
 $wgOpenSearchTemplate = false;
 
 /**
- * Enable suggestions while typing in search boxes
- * (results are passed around in OpenSearch format)
- * Requires $wgEnableOpenSearchSuggest = true;
+ * Templates for OpenSearch suggestions, defaults to API action=opensearch
+ *
+ * Sites with heavy load would typically have these point to a custom
+ * PHP wrapper to avoid firing up mediawiki for every keystroke
+ *
+ * Placeholders: {searchTerms}
  */
-$wgEnableMWSuggest = false;
+$wgOpenSearchTemplates = [
+	'application/x-suggestions+json' => false,
+	'application/x-suggestions+xml' => false,
+];
 
 /**
  * Enable OpenSearch suggestions requested by MediaWiki. Set this to
- * false if you've disabled MWSuggest or another suggestion script and
- * want reduce load caused by cached scripts pulling suggestions.
+ * false if you've disabled scripts that use api?action=opensearch and
+ * want reduce load caused by cached scripts still pulling suggestions.
+ * It will let the API fallback by responding with an empty array.
  */
 $wgEnableOpenSearchSuggest = true;
+
+/**
+ * Integer defining default number of entries to show on
+ * OpenSearch call.
+ */
+$wgOpenSearchDefaultLimit = 10;
+
+/**
+ * Minimum length of extract in <Description>. Actual extracts will last until the end of sentence.
+ */
+$wgOpenSearchDescriptionLength = 100;
 
 /**
  * Expiry time for search suggestion responses
  */
 $wgSearchSuggestCacheExpiry = 1200;
-
-/**
- *  Template for internal MediaWiki suggestion engine, defaults to API action=opensearch
- *
- *  Placeholders: {searchTerms}, {namespaces}, {dbname}
- *
- */
-$wgMWSuggestTemplate = false;
 
 /**
  * If you've disabled search semi-permanently, this also disables updates to the
@@ -4081,34 +6468,17 @@ $wgMWSuggestTemplate = false;
 $wgDisableSearchUpdate = false;
 
 /**
- * List of namespaces which are searched by default. Example:
+ * List of namespaces which are searched by default.
  *
- * <code>
+ * @par Example:
+ * @code
  * $wgNamespacesToBeSearchedDefault[NS_MAIN] = true;
  * $wgNamespacesToBeSearchedDefault[NS_PROJECT] = true;
- * </code>
+ * @endcode
  */
-$wgNamespacesToBeSearchedDefault = array(
-	NS_MAIN           => true,
-);
-
-/**
- * Namespaces to be searched when user clicks the "Help" tab
- * on Special:Search
- *
- * Same format as $wgNamespacesToBeSearchedDefault
- */
-$wgNamespacesToBeSearchedHelp = array(
-	NS_PROJECT        => true,
-	NS_HELP           => true,
-);
-
-/**
- * If set to true the 'searcheverything' preference will be effective only for logged-in users.
- * Useful for big wikis to maintain different search profiles for anonymous and logged-in users.
- *
- */
-$wgSearchEverythingOnlyLoggedIn = false;
+$wgNamespacesToBeSearchedDefault = [
+	NS_MAIN => true,
+];
 
 /**
  * Disable the internal MySQL-based search, to allow it to be
@@ -4121,27 +6491,54 @@ $wgDisableInternalSearch = false;
  * If the URL includes '$1', this will be replaced with the URL-encoded
  * search term.
  *
- * For example, to forward to Google you'd have something like:
- * $wgSearchForwardUrl = 'http://www.google.com/search?q=$1' .
- *                       '&domains=http://example.com' .
- *                       '&sitesearch=http://example.com' .
- *                       '&ie=utf-8&oe=utf-8';
+ * @par Example:
+ * To forward to Google you'd have something like:
+ * @code
+ * $wgSearchForwardUrl =
+ *     'https://www.google.com/search?q=$1' .
+ *     '&domains=https://example.com' .
+ *     '&sitesearch=https://example.com' .
+ *     '&ie=utf-8&oe=utf-8';
+ * @endcode
  */
 $wgSearchForwardUrl = null;
 
 /**
- * Search form behavior
- * true = use Go & Search buttons
- * false = use Go button & Advanced search link
+ * Search form behavior.
+ * - true = use Go & Search buttons
+ * - false = use Go button & Advanced search link
  */
 $wgUseTwoButtonsSearchForm = true;
 
 /**
  * Array of namespaces to generate a Google sitemap for when the
- * maintenance/generateSitemap.php script is run, or false if one is to be ge-
- * nerated for all namespaces.
+ * maintenance/generateSitemap.php script is run, or false if one is to be
+ * generated for all namespaces.
  */
 $wgSitemapNamespaces = false;
+
+/**
+ * Custom namespace priorities for sitemaps. Setting this will allow you to
+ * set custom priorities to namespaces when sitemaps are generated using the
+ * maintenance/generateSitemap.php script.
+ *
+ * This should be a map of namespace IDs to priority
+ * @par Example:
+ * @code
+ *  $wgSitemapNamespacesPriorities = [
+ *      NS_USER => '0.9',
+ *      NS_HELP => '0.0',
+ *  ];
+ * @endcode
+ */
+$wgSitemapNamespacesPriorities = false;
+
+/**
+ * If true, searches for IP addresses will be redirected to that IP's
+ * contributions page. E.g. searching for "1.2.3.4" will redirect to
+ * [[Special:Contributions/1.2.3.4]]
+ */
+$wgEnableSearchContributorsByIP = true;
 
 /** @} */ # end of search settings
 
@@ -4152,7 +6549,7 @@ $wgSitemapNamespaces = false;
 
 /**
  * Path to the GNU diff3 utility. If the file doesn't exist, edit conflicts will
- * fall back to the old behaviour (no merging).
+ * fall back to the old behavior (no merging).
  */
 $wgDiff3 = '/usr/bin/diff3';
 
@@ -4163,21 +6560,12 @@ $wgDiff = '/usr/bin/diff';
 
 /**
  * Which namespaces have special treatment where they should be preview-on-open
- * Internaly only Category: pages apply, but using this extensions (e.g. Semantic MediaWiki)
+ * Internally only Category: pages apply, but using this extensions (e.g. Semantic MediaWiki)
  * can specify namespaces of pages they have special treatment for
  */
-$wgPreviewOnOpenNamespaces = array(
-	NS_CATEGORY       => true
-);
-
-/**
- * Activate external editor interface for files and pages
- * See http://www.mediawiki.org/wiki/Manual:External_editors
- */
-$wgUseExternalEditor = true;
-
-/** Go button goes straight to the edit screen if the article doesn't exist. */
-$wgGoToEdit = false;
+$wgPreviewOnOpenNamespaces = [
+	NS_CATEGORY => true
+];
 
 /**
  * Enable the UniversalEditButton for browsers that support it
@@ -4205,20 +6593,15 @@ $wgUseAutomaticEditSummaries = true;
  * @cond file_level_code
  * Set $wgCommandLineMode if it's not set already, to avoid notices
  */
-if( !isset( $wgCommandLineMode ) ) {
+if ( !isset( $wgCommandLineMode ) ) {
 	$wgCommandLineMode = false;
 }
 /** @endcond */
 
-/** For colorized maintenance script output, is your terminal background dark ? */
-$wgCommandLineDarkBg = false;
-
 /**
- * Array for extensions to register their maintenance scripts with the
- * system. The key is the name of the class and the value is the full
- * path to the file
+ * For colorized maintenance script output, is your terminal background dark ?
  */
-$wgMaintenanceScripts = array();
+$wgCommandLineDarkBg = false;
 
 /**
  * Set this to a string to put the wiki into read-only mode. The text will be
@@ -4228,16 +6611,23 @@ $wgMaintenanceScripts = array();
  * still be possible. To prevent database writes completely, use the read_only
  * option in MySQL.
  */
-$wgReadOnly             = null;
+$wgReadOnly = null;
+
+/**
+ * Set this to true to put the wiki watchlists into read-only mode.
+ * @var bool
+ * @since 1.31
+ */
+$wgReadOnlyWatchedItemStore = false;
 
 /**
  * If this lock file exists (size > 0), the wiki will be forced into read-only mode.
  * Its contents will be shown to users as part of the read-only warning
  * message.
  *
- * Defaults to "{$wgUploadDirectory}/lock_yBgMBwiR".
+ * Will default to "{$wgUploadDirectory}/lock_yBgMBwiR" in Setup.php
  */
-$wgReadOnlyFile         = false;
+$wgReadOnlyFile = false;
 
 /**
  * When you run the web-based upgrade utility, it will tell you what to set
@@ -4250,6 +6640,31 @@ $wgReadOnlyFile         = false;
  */
 $wgUpgradeKey = false;
 
+/**
+ * Fully specified path to git binary
+ */
+$wgGitBin = '/usr/bin/git';
+
+/**
+ * Map GIT repository URLs to viewer URLs to provide links in Special:Version
+ *
+ * Key is a pattern passed to preg_match() and preg_replace(),
+ * without the delimiters (which are #) and must match the whole URL.
+ * The value is the replacement for the key (it can contain $1, etc.)
+ * %h will be replaced by the short SHA-1 (7 first chars) and %H by the
+ * full SHA-1 of the HEAD revision.
+ * %r will be replaced with a URL-encoded version of $1.
+ * %R will be replaced with $1 and no URL-encoding
+ *
+ * @since 1.20
+ */
+$wgGitRepositoryViewers = [
+	'https://(?:[a-z0-9_]+@)?gerrit.wikimedia.org/r/(?:p/)?(.*)' =>
+		'https://gerrit.wikimedia.org/g/%R/+/%H',
+	'ssh://(?:[a-z0-9_]+@)?gerrit.wikimedia.org:29418/(.*)' =>
+		'https://gerrit.wikimedia.org/g/%R/+/%H',
+];
+
 /** @} */ # End of maintenance }
 
 /************************************************************************//**
@@ -4260,9 +6675,24 @@ $wgUpgradeKey = false;
 /**
  * Recentchanges items are periodically purged; entries older than this many
  * seconds will go.
- * Default: 13 weeks = about three months
+ * Default: 90 days = about three months
  */
-$wgRCMaxAge = 13 * 7 * 24 * 3600;
+$wgRCMaxAge = 90 * 24 * 3600;
+
+/**
+ * Page watchers inactive for more than this many seconds are considered inactive.
+ * Used mainly by action=info. Default: 180 days = about six months.
+ * @since 1.26
+ */
+$wgWatchersMaxAge = 180 * 24 * 3600;
+
+/**
+ * If active watchers (per above) are this number or less, do not disclose it.
+ * Left to 1, prevents unprivileged users from knowing for sure that there are 0.
+ * Set to -1 if you want to always complement watchers count with this info.
+ * @since 1.26
+ */
+$wgUnwatchedPageSecret = 1;
 
 /**
  * Filter $wgRCLinkDays by $wgRCMaxAge to avoid showing links for numbers
@@ -4274,74 +6704,164 @@ $wgRCMaxAge = 13 * 7 * 24 * 3600;
 $wgRCFilterByAge = false;
 
 /**
- * List of Days and Limits options to list in the Special:Recentchanges and
+ * List of Limits options to list in the Special:Recentchanges and
  * Special:Recentchangeslinked pages.
  */
-$wgRCLinkLimits = array( 50, 100, 250, 500 );
-$wgRCLinkDays   = array( 1, 3, 7, 14, 30 );
+$wgRCLinkLimits = [ 50, 100, 250, 500 ];
 
 /**
- * Send recent changes updates via UDP. The updates will be formatted for IRC.
- * Set this to the IP address of the receiver.
+ * List of Days options to list in the Special:Recentchanges and
+ * Special:Recentchangeslinked pages.
  */
-$wgRC2UDPAddress = false;
+$wgRCLinkDays = [ 1, 3, 7, 14, 30 ];
 
 /**
- * Port number for RC updates
+ * Configuration for feeds to which notifications about recent changes will be sent.
+ *
+ * The following feed classes are available by default:
+ * - 'UDPRCFeedEngine' - sends recent changes over UDP to the specified server.
+ * - 'RedisPubSubFeedEngine' - send recent changes to Redis.
+ *
+ * Only 'class' or 'uri' is required. If 'uri' is set instead of 'class', then
+ * RecentChange::getEngine() is used to determine the class. All options are
+ * passed to the constructor.
+ *
+ * Common options:
+ * - 'class' -- The class to use for this feed (must implement RCFeed).
+ * - 'omit_bots' -- Exclude bot edits from the feed. (default: false)
+ * - 'omit_anon' -- Exclude anonymous edits from the feed. (default: false)
+ * - 'omit_user' -- Exclude edits by registered users from the feed. (default: false)
+ * - 'omit_minor' -- Exclude minor edits from the feed. (default: false)
+ * - 'omit_patrolled' -- Exclude patrolled edits from the feed. (default: false)
+ *
+ * FormattedRCFeed-specific options:
+ * - 'uri' -- [required] The address to which the messages are sent.
+ *   The uri scheme of this string will be looked up in $wgRCEngines
+ *   to determine which RCFeedEngine class to use.
+ * - 'formatter' -- [required] The class (implementing RCFeedFormatter) which will
+ *   produce the text to send. This can also be an object of the class.
+ *   Formatters available by default: JSONRCFeedFormatter, XMLRCFeedFormatter,
+ *   IRCColourfulRCFeedFormatter.
+ *
+ * IRCColourfulRCFeedFormatter-specific options:
+ * - 'add_interwiki_prefix' -- whether the titles should be prefixed with
+ *   the first entry in the $wgLocalInterwikis array (or the value of
+ *   $wgLocalInterwiki, if set)
+ *
+ * JSONRCFeedFormatter-specific options:
+ * - 'channel' -- if set, the 'channel' parameter is also set in JSON values.
+ *
+ * @example $wgRCFeeds['example'] = [
+ *		'uri' => 'udp://localhost:1336',
+ *		'formatter' => 'JSONRCFeedFormatter',
+ *		'add_interwiki_prefix' => false,
+ *		'omit_bots' => true,
+ *	];
+ * @example $wgRCFeeds['example'] = [
+ *		'uri' => 'udp://localhost:1338',
+ *		'formatter' => 'IRCColourfulRCFeedFormatter',
+ *		'add_interwiki_prefix' => false,
+ *		'omit_bots' => true,
+ *	];
+ * @example $wgRCFeeds['example'] = [
+ *		'class' => ExampleRCFeed::class,
+ *	];
+ * @since 1.22
  */
-$wgRC2UDPPort = false;
+$wgRCFeeds = [];
 
 /**
- * Prefix to prepend to each UDP packet.
- * This can be used to identify the wiki. A script is available called
- * mxircecho.py which listens on a UDP port, and uses a prefix ending in a
- * tab to identify the IRC channel to send the log line to.
+ * Used by RecentChange::getEngine to find the correct engine for a given URI scheme.
+ * Keys are scheme names, values are names of FormattedRCFeed sub classes.
+ * @since 1.22
  */
-$wgRC2UDPPrefix = '';
+$wgRCEngines = [
+	'redis' => RedisPubSubFeedEngine::class,
+	'udp' => UDPRCFeedEngine::class,
+];
 
 /**
- * If this is set to true, $wgLocalInterwiki will be prepended to links in the
- * IRC feed. If this is set to a string, that string will be used as the prefix.
+ * Treat category membership changes as a RecentChange.
+ * Changes are mentioned in RC for page actions as follows:
+ *   - creation: pages created with categories are mentioned
+ *   - edit: category additions/removals to existing pages are mentioned
+ *   - move: nothing is mentioned (unless templates used depend on the title)
+ *   - deletion: nothing is mentioned
+ *   - undeletion: nothing is mentioned
+ *
+ * @since 1.27
  */
-$wgRC2UDPInterwikiPrefix = false;
+$wgRCWatchCategoryMembership = false;
 
 /**
- * Set to true to omit "bot" edits (by users with the bot permission) from the
- * UDP feed.
+ * Use RC Patrolling to check for vandalism (from recent changes and watchlists)
+ * New pages and new files are included.
+ *
+ * @note If you disable all patrolling features, you probably also want to
+ *  remove 'patrol' from $wgFilterLogTypes so a show/hide link isn't shown on
+ *  Special:Log.
  */
-$wgRC2UDPOmitBots = false;
-
-/**
- * Enable user search in Special:Newpages
- * This is really a temporary hack around an index install bug on some Wikipedias.
- * Kill it once fixed.
- */
-$wgEnableNewpagesUserFilter = true;
-
-/** Use RC Patrolling to check for vandalism */
 $wgUseRCPatrol = true;
 
-/** Use new page patrolling to check new pages on Special:Newpages */
+/**
+ * Whether a preference is displayed for structured change filters.
+ * If false, no preference is displayed and structured change filters are disabled.
+ * If true, structured change filters are *enabled* by default, and a preference is displayed
+ * that lets users disable them.
+ *
+ * Temporary variable during development and will be removed.
+ *
+ * @since 1.30
+ */
+$wgStructuredChangeFiltersShowPreference = false;
+
+/**
+ * Whether to enable RCFilters app on Special:Watchlist
+ *
+ * Temporary variable during development and will be removed.
+ */
+$wgStructuredChangeFiltersOnWatchlist = false;
+
+/**
+ * Polling rate, in seconds, used by the 'live update' and 'view newest' features
+ * of the RCFilters app on SpecialRecentChanges and Special:Watchlist.
+ * 0 to disable completely.
+ */
+$wgStructuredChangeFiltersLiveUpdatePollingRate = 3;
+
+/**
+ * Use new page patrolling to check new pages on Special:Newpages
+ *
+ * @note If you disable all patrolling features, you probably also want to
+ *  remove 'patrol' from $wgFilterLogTypes so a show/hide link isn't shown on
+ *  Special:Log.
+ */
 $wgUseNPPatrol = true;
 
-/** Provide syndication feeds (RSS, Atom) for, e.g., Recentchanges, Newpages */
+/**
+ * Use file patrolling to check new files on Special:Newfiles
+ *
+ * @note If you disable all patrolling features, you probably also want to
+ *  remove 'patrol' from $wgFilterLogTypes so a show/hide link isn't shown on
+ *  Special:Log.
+ *
+ * @since 1.27
+ */
+$wgUseFilePatrol = true;
+
+/**
+ * Provide syndication feeds (RSS, Atom) for, e.g., Recentchanges, Newpages
+ */
 $wgFeed = true;
 
 /**
- * Available feeds objects
- * Should probably only be defined when a page is syndicated ie when
- * $wgOut->isSyndicated() is true
+ * Set maximum number of results to return in syndication feeds (RSS, Atom) for
+ * eg Recentchanges, Newpages.
  */
-$wgFeedClasses = array(
-	'rss' => 'RSSFeed',
-	'atom' => 'AtomFeed',
-);
-
-/** Set maximum number of results to return in syndication feeds (RSS, Atom) for
- * eg Recentchanges, Newpages. */
 $wgFeedLimit = 50;
 
-/** _Minimum_ timeout for cached Recentchanges feed, in seconds.
+/**
+ * _Minimum_ timeout for cached Recentchanges feed, in seconds.
  * A cached version will continue to be served out even if changes
  * are made, until this many seconds runs out since the last render.
  *
@@ -4350,42 +6870,64 @@ $wgFeedLimit = 50;
  */
 $wgFeedCacheTimeout = 60;
 
-/** When generating Recentchanges RSS/Atom feed, diffs will not be generated for
- * pages larger than this size. */
+/**
+ * When generating Recentchanges RSS/Atom feed, diffs will not be generated for
+ * pages larger than this size.
+ */
 $wgFeedDiffCutoff = 32768;
 
-/** Override the site's default RSS/ATOM feed for recentchanges that appears on
+/**
+ * Override the site's default RSS/ATOM feed for recentchanges that appears on
  * every page. Some sites might have a different feed they'd like to promote
  * instead of the RC feed (maybe like a "Recent New Articles" or "Breaking news" one).
- * Ex: $wgSiteFeed['format'] = "http://example.com/somefeed.xml"; Format can be one
- * of either 'rss' or 'atom'.
+ * Should be a format as key (either 'rss' or 'atom') and an URL to the feed
+ * as value.
+ * @par Example:
+ * Configure the 'atom' feed to https://example.com/somefeed.xml
+ * @code
+ * $wgSiteFeed['atom'] = "https://example.com/somefeed.xml";
+ * @endcode
  */
-$wgOverrideSiteFeed = array();
+$wgOverrideSiteFeed = [];
+
+/**
+ * Available feeds objects.
+ * Should probably only be defined when a page is syndicated ie when
+ * $wgOut->isSyndicated() is true.
+ */
+$wgFeedClasses = [
+	'rss' => RSSFeed::class,
+	'atom' => AtomFeed::class,
+];
 
 /**
  * Which feed types should we provide by default?  This can include 'rss',
  * 'atom', neither, or both.
  */
-$wgAdvertisedFeedTypes = array( 'atom' );
+$wgAdvertisedFeedTypes = [ 'atom' ];
 
-/** Show watching users in recent changes, watchlist and page history views */
-$wgRCShowWatchingUsers 				= false; # UPO
-/** Show watching users in Page views */
-$wgPageShowWatchingUsers 			= false;
-/** Show the amount of changed characters in recent changes */
-$wgRCShowChangedSize				= true;
+/**
+ * Show watching users in recent changes, watchlist and page history views
+ */
+$wgRCShowWatchingUsers = false; # UPO
+
+/**
+ * Show the amount of changed characters in recent changes
+ */
+$wgRCShowChangedSize = true;
 
 /**
  * If the difference between the character counts of the text
  * before and after the edit is below that value, the value will be
  * highlighted on the RC page.
  */
-$wgRCChangedSizeThreshold			= 500;
+$wgRCChangedSizeThreshold = 500;
 
 /**
  * Show "Updated (since my last visit)" marker in RC view, watchlist and history
- * view for watched pages with new changes */
-$wgShowUpdatedMarker 				= true;
+ * view for watched pages with new changes
+ */
+$wgShowUpdatedMarker = true;
 
 /**
  * Disable links to talk pages of anonymous users (IPs) in listings on special
@@ -4394,15 +6936,97 @@ $wgShowUpdatedMarker 				= true;
 $wgDisableAnonTalk = false;
 
 /**
- * Enable filtering of categories in Recentchanges
- */
-$wgAllowCategorizedRecentChanges = false;
-
-/**
  * Allow filtering by change tag in recentchanges, history, etc
  * Has no effect if no tags are defined in valid_tag.
  */
 $wgUseTagFilter = true;
+
+/**
+ * List of core tags to enable. Available tags are:
+ * - 'mw-contentmodelchange': Edit changes content model of a page
+ * - 'mw-new-redirect': Edit makes new redirect page (new page or by changing content page)
+ * - 'mw-removed-redirect': Edit changes an existing redirect into a non-redirect
+ * - 'mw-changed-redirect-target': Edit changes redirect target
+ * - 'mw-blank': Edit completely blanks the page
+ * - 'mw-replace': Edit removes more than 90% of the content
+ * - 'mw-rollback': Edit is a rollback, made through the rollback link or rollback API
+ * - 'mw-undo': Edit made through an undo link
+ *
+ * @var array
+ * @since 1.31
+ */
+$wgSoftwareTags = [
+	'mw-contentmodelchange' => true,
+	'mw-new-redirect' => true,
+	'mw-removed-redirect' => true,
+	'mw-changed-redirect-target' => true,
+	'mw-blank' => true,
+	'mw-replace' => true,
+	'mw-rollback' => true,
+	'mw-undo' => true,
+];
+
+/**
+ * If set to an integer, pages that are watched by this many users or more
+ * will not require the unwatchedpages permission to view the number of
+ * watchers.
+ *
+ * @since 1.21
+ */
+$wgUnwatchedPageThreshold = false;
+
+/**
+ * Flags (letter symbols) shown in recent changes and watchlist to indicate
+ * certain types of edits.
+ *
+ * To register a new one:
+ * @code
+ * $wgRecentChangesFlags['flag'] => [
+ *   // message for the letter displayed next to rows on changes lists
+ *   'letter' => 'letter-msg',
+ *   // message for the tooltip of the letter
+ *   'title' => 'tooltip-msg',
+ *   // optional (defaults to 'tooltip-msg'), message to use in the legend box
+ *   'legend' => 'legend-msg',
+ *   // optional (defaults to 'flag'), CSS class to put on changes lists rows
+ *   'class' => 'css-class',
+ *   // optional (defaults to 'any'), how top-level flag is determined.  'any'
+ *   // will set the top-level flag if any line contains the flag, 'all' will
+ *   // only be set if all lines contain the flag.
+ *   'grouping' => 'any',
+ * ];
+ * @endcode
+ *
+ * @since 1.22
+ */
+$wgRecentChangesFlags = [
+	'newpage' => [
+		'letter' => 'newpageletter',
+		'title' => 'recentchanges-label-newpage',
+		'legend' => 'recentchanges-legend-newpage',
+		'grouping' => 'any',
+	],
+	'minor' => [
+		'letter' => 'minoreditletter',
+		'title' => 'recentchanges-label-minor',
+		'legend' => 'recentchanges-legend-minor',
+		'class' => 'minoredit',
+		'grouping' => 'all',
+	],
+	'bot' => [
+		'letter' => 'boteditletter',
+		'title' => 'recentchanges-label-bot',
+		'legend' => 'recentchanges-legend-bot',
+		'class' => 'botedit',
+		'grouping' => 'all',
+	],
+	'unpatrolled' => [
+		'letter' => 'unpatrolledletter',
+		'title' => 'recentchanges-label-unpatrolled',
+		'legend' => 'recentchanges-legend-unpatrolled',
+		'grouping' => 'any',
+	],
+];
 
 /** @} */ # end RC/watchlist }
 
@@ -4411,35 +7035,39 @@ $wgUseTagFilter = true;
  * @{
  */
 
-/** RDF metadata toggles */
-$wgEnableDublinCoreRdf = false;
-$wgEnableCreativeCommonsRdf = false;
-
-/** Override for copyright metadata.
- * TODO: these options need documentation
+/**
+ * Override for copyright metadata.
+ *
+ * This is the name of the page containing information about the wiki's copyright status,
+ * which will be added as a link in the footer if it is specified. It overrides
+ * $wgRightsUrl if both are specified.
  */
 $wgRightsPage = null;
+
+/**
+ * Set this to specify an external URL containing details about the content license used on your
+ * wiki.
+ * If $wgRightsPage is set then this setting is ignored.
+ */
 $wgRightsUrl = null;
+
+/**
+ * If either $wgRightsUrl or $wgRightsPage is specified then this variable gives the text for the
+ * link.
+ * If using $wgRightsUrl then this value must be specified. If using $wgRightsPage then the name
+ * of the page will also be used as the link if this variable is not set.
+ */
 $wgRightsText = null;
+
+/**
+ * Override for copyright metadata.
+ */
 $wgRightsIcon = null;
 
 /**
- * Set to an array of metadata terms. Else they will be loaded based on $wgRightsUrl
+ * Set this to true if you want detailed copyright information forms on Upload.
  */
-$wgLicenseTerms = false;
-
-/**
- * Set this to some HTML to override the rights icon with an arbitrary logo
- * @deprecated since 1.18 Use $wgFooterIcons['copyright']['copyright']
- */
-$wgCopyrightIcon = null;
-
-/** Set this to true if you want detailed copyright information forms on Upload. */
 $wgUseCopyrightUpload = false;
-
-/** Set this to false if you want to disable checking that detailed copyright
- * information values are not empty. */
-$wgCheckCopyrightUpload = true;
 
 /**
  * Set this to the number of authors that you want to be credited below an
@@ -4450,8 +7078,10 @@ $wgCheckCopyrightUpload = true;
  */
 $wgMaxCredits = 0;
 
-/** If there are more than $wgMaxCredits authors, show $wgMaxCredits of them.
- * Otherwise, link to a separate credits page. */
+/**
+ * If there are more than $wgMaxCredits authors, show $wgMaxCredits of them.
+ * Otherwise, link to a separate credits page.
+ */
 $wgShowCreditsIfMax = true;
 
 /** @} */ # end of copyright and credits settings }
@@ -4463,13 +7093,27 @@ $wgShowCreditsIfMax = true;
 
 /**
  * List of interwiki prefixes for wikis we'll accept as sources for
- * Special:Import (for sysops). Since complete page history can be imported,
- * these should be 'trusted'.
+ * Special:Import and API action=import. Since complete page history can be
+ * imported, these should be 'trusted'.
+ *
+ * This can either be a regular array, or an associative map specifying
+ * subprojects on the interwiki map of the target wiki, or a mix of the two,
+ * e.g.
+ * @code
+ *     $wgImportSources = [
+ *         'wikipedia' => [ 'cs', 'en', 'fr', 'zh' ],
+ *         'wikispecies',
+ *         'wikia' => [ 'animanga', 'brickipedia', 'desserts' ],
+ *     ];
+ * @endcode
+ *
+ * If you have a very complex import sources setup, you can lazy-load it using
+ * the ImportSources hook.
  *
  * If a user has the 'import' permission but not the 'importupload' permission,
  * they will only be able to run imports through this transwiki interface.
  */
-$wgImportSources = array();
+$wgImportSources = [];
 
 /**
  * Optional default target namespace for interwiki imports.
@@ -4495,9 +7139,9 @@ $wgExportAllowHistory = true;
 $wgExportMaxHistory = 0;
 
 /**
-* Return distinct author list (when not returning full history)
-*/
-$wgExportAllowListContributors = false ;
+ * Return distinct author list (when not returning full history)
+ */
+$wgExportAllowListContributors = false;
 
 /**
  * If non-zero, Special:Export accepts a "pagelink-depth" parameter
@@ -4506,16 +7150,29 @@ $wgExportAllowListContributors = false ;
  * can become *insanely large* and could easily break your wiki,
  * it's disabled by default for now.
  *
- * There's a HARD CODED limit of 5 levels of recursion to prevent a
- * crazy-big export from being done by someone setting the depth
- * number too high. In other words, last resort safety net.
+ * @warning There's a HARD CODED limit of 5 levels of recursion to prevent a
+ * crazy-big export from being done by someone setting the depth number too
+ * high. In other words, last resort safety net.
  */
 $wgExportMaxLinkDepth = 0;
 
 /**
-* Whether to allow the "export all pages in namespace" option
-*/
+ * Whether to allow the "export all pages in namespace" option
+ */
 $wgExportFromNamespaces = false;
+
+/**
+ * Whether to allow exporting the entire wiki into a single file
+ */
+$wgExportAllowAll = false;
+
+/**
+ * Maximum number of pages returned by the GetPagesFromCategory and
+ * GetPagesFromNamespace functions.
+ *
+ * @since 1.27
+ */
+$wgExportPagelistLimit = 5000;
 
 /** @} */ # end of import/export }
 
@@ -4525,9 +7182,10 @@ $wgExportFromNamespaces = false;
  */
 
 /**
- * A list of callback functions which are called once MediaWiki is fully initialised
+ * A list of callback functions which are called once MediaWiki is fully
+ * initialised
  */
-$wgExtensionFunctions = array();
+$wgExtensionFunctions = [];
 
 /**
  * Extension messages files.
@@ -4540,17 +7198,56 @@ $wgExtensionFunctions = array();
  * Variables defined in extensions will override conflicting variables defined
  * in the core.
  *
- * Example:
- *    $wgExtensionMessagesFiles['ConfirmEdit'] = dirname(__FILE__).'/ConfirmEdit.i18n.php';
+ * Since MediaWiki 1.23, use of this variable to define messages is discouraged; instead, store
+ * messages in JSON format and use $wgMessagesDirs. For setting other variables than
+ * $messages, $wgExtensionMessagesFiles should still be used. Use a DIFFERENT key because
+ * any entry having a key that also exists in $wgMessagesDirs will be ignored.
  *
+ * Extensions using the JSON message format can preserve backward compatibility with
+ * earlier versions of MediaWiki by using a compatibility shim, such as one generated
+ * by the generateJsonI18n.php maintenance script, listing it under the SAME key
+ * as for the $wgMessagesDirs entry.
+ *
+ * @par Example:
+ * @code
+ *    $wgExtensionMessagesFiles['ConfirmEdit'] = __DIR__.'/ConfirmEdit.i18n.php';
+ * @endcode
  */
-$wgExtensionMessagesFiles = array();
+$wgExtensionMessagesFiles = [];
 
 /**
- * Aliases for special pages provided by extensions.
- * @deprecated since 1.16 Use $specialPageAliases in a file referred to by $wgExtensionMessagesFiles
+ * Extension messages directories.
+ *
+ * Associative array mapping extension name to the path of the directory where message files can
+ * be found. The message files are expected to be JSON files named for their language code, e.g.
+ * en.json, de.json, etc. Extensions with messages in multiple places may specify an array of
+ * message directories.
+ *
+ * Message directories in core should be added to LocalisationCache::getMessagesDirs()
+ *
+ * @par Simple example:
+ * @code
+ *    $wgMessagesDirs['Example'] = __DIR__ . '/i18n';
+ * @endcode
+ *
+ * @par Complex example:
+ * @code
+ *    $wgMessagesDirs['Example'] = [
+ *        __DIR__ . '/lib/ve/i18n',
+ *        __DIR__ . '/lib/oojs-ui/i18n',
+ *        __DIR__ . '/i18n',
+ *    ]
+ * @endcode
+ * @since 1.23
  */
-$wgExtensionAliasesFiles = array();
+$wgMessagesDirs = [];
+
+/**
+ * Array of files with list(s) of extension entry points to be used in
+ * maintenance/mergeMessageFileList.php
+ * @since 1.22
+ */
+$wgExtensionEntryPointListFiles = [];
 
 /**
  * Parser output hooks.
@@ -4562,122 +7259,265 @@ $wgExtensionAliasesFiles = array();
  * Registration is done with $pout->addOutputHook( $tag, $data ).
  *
  * The callback has the form:
+ * @code
  *    function outputHook( $outputPage, $parserOutput, $data ) { ... }
+ * @endcode
  */
-$wgParserOutputHooks = array();
+$wgParserOutputHooks = [];
 
 /**
- * List of valid skin names.
+ * Whether to include the NewPP limit report as a HTML comment
+ */
+$wgEnableParserLimitReporting = true;
+
+/**
+ * List of valid skin names
+ *
  * The key should be the name in all lower case, the value should be a properly
- * cased name for the skin. This value will be prefixed with "Skin" to create the
- * class name of the skin to load, and if the skin's class cannot be found through
- * the autoloader it will be used to load a .php file by that name in the skins directory.
- * The default skins will be added later, by Skin::getSkinNames(). Use
- * Skin::getSkinNames() as an accessor if you wish to have access to the full list.
+ * cased name for the skin. This value will be prefixed with "Skin" to create
+ * the class name of the skin to load. Use Skin::getSkinNames() as an accessor
+ * if you wish to have access to the full list.
  */
-$wgValidSkinNames = array();
+$wgValidSkinNames = [];
 
 /**
- * Special page list.
- * See the top of SpecialPage.php for documentation.
+ * Special page list. This is an associative array mapping the (canonical) names of
+ * special pages to either a class name to be instantiated, or a callback to use for
+ * creating the special page object. In both cases, the result must be an instance of
+ * SpecialPage.
  */
-$wgSpecialPages = array();
+$wgSpecialPages = [];
 
 /**
  * Array mapping class names to filenames, for autoloading.
  */
-$wgAutoloadClasses = array();
+$wgAutoloadClasses = [];
 
 /**
- * An array of extension types and inside that their names, versions, authors,
- * urls, descriptions and pointers to localized description msgs. Note that
- * the version, url, description and descriptionmsg key can be omitted.
- *
- * <code>
- * $wgExtensionCredits[$type][] = array(
- * 	'name' => 'Example extension',
- *	'version' => 1.9,
- *	'path' => __FILE__,
- *	'author' => 'Foo Barstein',
- *	'url' => 'http://wwww.example.com/Example%20Extension/',
- *	'description' => 'An example extension',
- *	'descriptionmsg' => 'exampleextension-desc',
- * );
- * </code>
- *
- * Where $type is 'specialpage', 'parserhook', 'variable', 'media' or 'other'.
- * Where 'descriptionmsg' can be an array with message key and parameters:
- * 'descriptionmsg' => array( 'exampleextension-desc', param1, param2, ... ),
+ * Switch controlling legacy case-insensitive classloading.
+ * Do not disable if your wiki must support data created by PHP4, or by
+ * MediaWiki 1.4 or earlier.
  */
-$wgExtensionCredits = array();
+$wgAutoloadAttemptLowercase = true;
+
+/**
+ * An array of information about installed extensions keyed by their type.
+ *
+ * All but 'name', 'path' and 'author' can be omitted.
+ *
+ * @code
+ * $wgExtensionCredits[$type][] = [
+ *     'path' => __FILE__,
+ *     'name' => 'Example extension',
+ *     'namemsg' => 'exampleextension-name',
+ *     'author' => [
+ *         'Foo Barstein',
+ *     ],
+ *     'version' => '1.9.0',
+ *     'url' => 'https://example.org/example-extension/',
+ *     'descriptionmsg' => 'exampleextension-desc',
+ *     'license-name' => 'GPL-2.0-or-later',
+ * ];
+ * @endcode
+ *
+ * The extensions are listed on Special:Version. This page also looks for a file
+ * named COPYING or LICENSE (optional .txt extension) and provides a link to
+ * view said file. When the 'license-name' key is specified, this file is
+ * interpreted as wikitext.
+ *
+ * - $type: One of 'specialpage', 'parserhook', 'variable', 'media', 'antispam',
+ *    'skin', 'api', or 'other', or any additional types as specified through the
+ *    ExtensionTypes hook as used in SpecialVersion::getExtensionTypes().
+ *
+ * - name: Name of extension as an inline string instead of localizable message.
+ *    Do not omit this even if 'namemsg' is provided, as it is used to override
+ *    the path Special:Version uses to find extension's license info, and is
+ *    required for backwards-compatibility with MediaWiki 1.23 and older.
+ *
+ * - namemsg (since MW 1.24): A message key for a message containing the
+ *    extension's name, if the name is localizable. (For example, skin names
+ *    usually are.)
+ *
+ * - author: A string or an array of strings. Authors can be linked using
+ *    the regular wikitext link syntax. To have an internationalized version of
+ *    "and others" show, add an element "...". This element can also be linked,
+ *    for instance "[https://example ...]".
+ *
+ * - descriptionmsg: A message key or an an array with message key and parameters:
+ *    `'descriptionmsg' => 'exampleextension-desc',`
+ *
+ * - description: Description of extension as an inline string instead of
+ *    localizable message (omit in favour of 'descriptionmsg').
+ *
+ * - license-name: Short name of the license (used as label for the link), such
+ *   as "GPL-2.0-or-later" or "MIT" (https://spdx.org/licenses/ for a list of identifiers).
+ */
+$wgExtensionCredits = [];
 
 /**
  * Authentication plugin.
- * @var AuthPlugin
+ * @var $wgAuth AuthPlugin
+ * @deprecated since 1.27 use $wgAuthManagerConfig instead
  */
 $wgAuth = null;
 
 /**
  * Global list of hooks.
- * Add a hook by doing:
+ *
+ * The key is one of the events made available by MediaWiki, you can find
+ * a description for most of them in docs/hooks.txt. The array is used
+ * internally by Hook:run().
+ *
+ * The value can be one of:
+ *
+ * - A function name:
+ * @code
  *     $wgHooks['event_name'][] = $function;
- * or:
- *     $wgHooks['event_name'][] = array($function, $data);
- * or:
- *     $wgHooks['event_name'][] = array($object, 'method');
+ * @endcode
+ * - A function with some data:
+ * @code
+ *     $wgHooks['event_name'][] = [ $function, $data ];
+ * @endcode
+ * - A an object method:
+ * @code
+ *     $wgHooks['event_name'][] = [ $object, 'method' ];
+ * @endcode
+ * - A closure:
+ * @code
+ *     $wgHooks['event_name'][] = function ( $hookParam ) {
+ *         // Handler code goes here.
+ *     };
+ * @endcode
+ *
+ * @warning You should always append to an event array or you will end up
+ * deleting a previous registered hook.
+ *
+ * @warning Hook handlers should be registered at file scope. Registering
+ * handlers after file scope can lead to unexpected results due to caching.
  */
-$wgHooks = array();
+$wgHooks = [];
 
 /**
- * Maps jobs to their handling classes; extensions
- * can add to this to provide custom jobs
+ * List of service wiring files to be loaded by the default instance of MediaWikiServices.
+ * Each file listed here is expected to return an associative array mapping service names
+ * to instantiator functions. Extensions may add wiring files to define their own services.
+ * However, this cannot be used to replace existing services - use the MediaWikiServices
+ * hook for that.
+ *
+ * @see MediaWikiServices
+ * @see ServiceContainer::loadWiringFiles() for details on loading service instantiator functions.
+ * @see docs/injection.txt for an overview of dependency injection in MediaWiki.
  */
-$wgJobClasses = array(
-	'refreshLinks' => 'RefreshLinksJob',
-	'refreshLinks2' => 'RefreshLinksJob2',
-	'htmlCacheUpdate' => 'HTMLCacheUpdateJob',
-	'html_cache_update' => 'HTMLCacheUpdateJob', // backwards-compatible
-	'sendMail' => 'EmaillingJob',
-	'enotifNotify' => 'EnotifNotifyJob',
-	'fixDoubleRedirect' => 'DoubleRedirectJob',
-	'uploadFromUrl' => 'UploadFromUrlJob',
-);
+$wgServiceWiringFiles = [
+	__DIR__ . '/ServiceWiring.php'
+];
 
 /**
- * Extensions of "thumbnails" that are very expensive to regenerate and should be 
- * excluded from normal action=purge thumbnail removal. 
+ * Maps jobs to their handlers; extensions
+ * can add to this to provide custom jobs.
+ * A job handler should either be a class name to be instantiated,
+ * or (since 1.30) a callback to use for creating the job object.
  */
-$wgExcludeFromThumbnailPurge = array();
+$wgJobClasses = [
+	'refreshLinks' => RefreshLinksJob::class,
+	'deleteLinks' => DeleteLinksJob::class,
+	'htmlCacheUpdate' => HTMLCacheUpdateJob::class,
+	'sendMail' => EmaillingJob::class,
+	'enotifNotify' => EnotifNotifyJob::class,
+	'fixDoubleRedirect' => DoubleRedirectJob::class,
+	'AssembleUploadChunks' => AssembleUploadChunksJob::class,
+	'PublishStashedFile' => PublishStashedFileJob::class,
+	'ThumbnailRender' => ThumbnailRenderJob::class,
+	'recentChangesUpdate' => RecentChangesUpdateJob::class,
+	'refreshLinksPrioritized' => RefreshLinksJob::class,
+	'refreshLinksDynamic' => RefreshLinksJob::class,
+	'activityUpdateJob' => ActivityUpdateJob::class,
+	'categoryMembershipChange' => CategoryMembershipChangeJob::class,
+	'clearUserWatchlist' => ClearUserWatchlistJob::class,
+	'cdnPurge' => CdnPurgeJob::class,
+	'userGroupExpiry' => UserGroupExpiryJob::class,
+	'clearWatchlistNotifications' => ClearWatchlistNotificationsJob::class,
+	'enqueue' => EnqueueJob::class, // local queue for multi-DC setups
+	'null' => NullJob::class,
+];
 
 /**
-
- * Jobs that must be explicitly requested, i.e. aren't run by job runners unless special flags are set.
- * 
+ * Jobs that must be explicitly requested, i.e. aren't run by job runners unless
+ * special flags are set. The values here are keys of $wgJobClasses.
+ *
  * These can be:
  * - Very long-running jobs.
  * - Jobs that you would never want to run as part of a page rendering request.
  * - Jobs that you want to run on specialized machines ( like transcoding, or a particular
  *   machine on your cluster has 'outside' web access you could restrict uploadFromUrl )
+ * These settings should be global to all wikis.
  */
-$wgJobTypesExcludedFromDefaultQueue = array();
+$wgJobTypesExcludedFromDefaultQueue = [ 'AssembleUploadChunks', 'PublishStashedFile' ];
+
+/**
+ * Map of job types to how many job "work items" should be run per second
+ * on each job runner process. The meaning of "work items" varies per job,
+ * but typically would be something like "pages to update". A single job
+ * may have a variable number of work items, as is the case with batch jobs.
+ * This is used by runJobs.php and not jobs run via $wgJobRunRate.
+ * These settings should be global to all wikis.
+ * @var float[]
+ */
+$wgJobBackoffThrottling = [];
+
+/**
+ * Make job runners commit changes for replica DB-lag prone jobs one job at a time.
+ * This is useful if there are many job workers that race on replica DB lag checks.
+ * If set, jobs taking this many seconds of DB write time have serialized commits.
+ *
+ * Note that affected jobs may have worse lock contention. Also, if they affect
+ * several DBs at once they may have a smaller chance of being atomic due to the
+ * possibility of connection loss while queueing up to commit. Affected jobs may
+ * also fail due to the commit lock acquisition timeout.
+ *
+ * @var float|bool
+ * @since 1.26
+ */
+$wgJobSerialCommitThreshold = false;
+
+/**
+ * Map of job types to configuration arrays.
+ * This determines which queue class and storage system is used for each job type.
+ * Job types that do not have explicit configuration will use the 'default' config.
+ * These settings should be global to all wikis.
+ */
+$wgJobTypeConf = [
+	'default' => [ 'class' => JobQueueDB::class, 'order' => 'random', 'claimTTL' => 3600 ],
+];
+
+/**
+ * Which aggregator to use for tracking which queues have jobs.
+ * These settings should be global to all wikis.
+ */
+$wgJobQueueAggregator = [
+	'class' => JobQueueAggregatorNull::class
+];
+
+/**
+ * Whether to include the number of jobs that are queued
+ * for the API's maxlag parameter.
+ * The total number of jobs will be divided by this to get an
+ * estimated second of maxlag. Typically bots backoff at maxlag=5,
+ * so setting this to the max number of jobs that should be in your
+ * queue divided by 5 should have the effect of stopping bots once
+ * that limit is hit.
+ *
+ * @since 1.29
+ */
+$wgJobQueueIncludeInMaxLagFactor = false;
 
 /**
  * Additional functions to be performed with updateSpecialPages.
  * Expensive Querypages are already updated.
  */
-$wgSpecialPageCacheUpdates = array(
-	'Statistics' => array('SiteStatsUpdate','cacheUpdate')
-);
-
-/**
- * Hooks that are used for outputting exceptions.  Format is:
- *   $wgExceptionHooks[] = $funcname
- * or:
- *   $wgExceptionHooks[] = array( $class, $funcname )
- * Hooks should return strings or false
- */
-$wgExceptionHooks = array();
-
+$wgSpecialPageCacheUpdates = [
+	'Statistics' => [ SiteStatsUpdate::class, 'cacheUpdate' ]
+];
 
 /**
  * Page property link table invalidation lists. When a page property
@@ -4686,9 +7526,9 @@ $wgExceptionHooks = array();
  * have been added, so the categorylinks table needs to be rebuilt).
  * This array can be added to by extensions.
  */
-$wgPagePropLinkInvalidations = array(
+$wgPagePropLinkInvalidations = [
 	'hiddencat' => 'categorylinks',
-);
+];
 
 /** @} */ # End extensions }
 
@@ -4700,7 +7540,7 @@ $wgPagePropLinkInvalidations = array(
 /**
  * Use experimental, DMOZ-like category browser
  */
-$wgUseCategoryBrowser   = false;
+$wgUseCategoryBrowser = false;
 
 /**
  *  On  category pages, show thumbnail gallery for images belonging to that
@@ -4721,17 +7561,22 @@ $wgCategoryPagingLimit = 200;
  *
  *   - uppercase: Converts the category name to upper case, and sorts by that.
  *
+ *   - identity: Does no conversion. Sorts by binary value of the string.
+ *
  *   - uca-default: Provides access to the Unicode Collation Algorithm with
  *     the default element table. This is a compromise collation which sorts
  *     all languages in a mediocre way. However, it is better than "uppercase".
  *
  * To use the uca-default collation, you must have PHP's intl extension
- * installed. See http://php.net/manual/en/intl.setup.php . The details of the
+ * installed. See https://secure.php.net/manual/en/intl.setup.php . The details of the
  * resulting collation will depend on the version of ICU installed on the
  * server.
  *
  * After you change this, you must run maintenance/updateCollation.php to fix
  * the sort keys in the database.
+ *
+ * Extensions can define there own collations by subclassing Collation
+ * and using the Collation::factory hook.
  */
 $wgCategoryCollation = 'uppercase';
 
@@ -4748,7 +7593,8 @@ $wgCategoryCollation = 'uppercase';
  * an action, which is a specific kind of event that can exist in that
  * log type.
  */
-$wgLogTypes = array( '',
+$wgLogTypes = [
+	'',
 	'block',
 	'protect',
 	'rights',
@@ -4759,7 +7605,10 @@ $wgLogTypes = array( '',
 	'patrol',
 	'merge',
 	'suppress',
-);
+	'tag',
+	'managetags',
+	'contentmodel',
+];
 
 /**
  * This restricts log access to those who have a certain right
@@ -4768,9 +7617,9 @@ $wgLogTypes = array( '',
  * Logs should remain non-transcludable
  * Format: logtype => permissiontype
  */
-$wgLogRestrictions = array(
+$wgLogRestrictions = [
 	'suppress' => 'suppressionlog'
-);
+];
 
 /**
  * Show/hide links on Special:Log will be shown for these log types.
@@ -4779,62 +7628,68 @@ $wgLogRestrictions = array(
  *
  * See $wgLogTypes for a list of available log types.
  *
- * For example:
- *   $wgFilterLogTypes => array(
- *      'move' => true,
- *      'import' => false,
- *   );
+ * @par Example:
+ * @code
+ *   $wgFilterLogTypes = [ 'move' => true, 'import' => false ];
+ * @endcode
  *
  * Will display show/hide links for the move and import logs. Move logs will be
  * hidden by default unless the link is clicked. Import logs will be shown by
  * default, and hidden when the link is clicked.
  *
- * A message of the form log-show-hide-<type> should be added, and will be used
+ * A message of the form log-show-hide-[type] should be added, and will be used
  * for the link text.
  */
-$wgFilterLogTypes = array(
-	'patrol' => true
-);
+$wgFilterLogTypes = [
+	'patrol' => true,
+	'tag' => true,
+];
 
 /**
  * Lists the message key string for each log type. The localized messages
  * will be listed in the user interface.
  *
  * Extensions with custom log types may add to this array.
+ *
+ * @since 1.19, if you follow the naming convention log-name-TYPE,
+ * where TYPE is your log type, yoy don't need to use this array.
  */
-$wgLogNames = array(
-	''        => 'all-logs-page',
-	'block'   => 'blocklogpage',
+$wgLogNames = [
+	'' => 'all-logs-page',
+	'block' => 'blocklogpage',
 	'protect' => 'protectlogpage',
-	'rights'  => 'rightslog',
-	'delete'  => 'dellogpage',
-	'upload'  => 'uploadlogpage',
-	'move'    => 'movelogpage',
-	'import'  => 'importlogpage',
-	'patrol'  => 'patrol-log-page',
-	'merge'   => 'mergelog',
+	'rights' => 'rightslog',
+	'delete' => 'dellogpage',
+	'upload' => 'uploadlogpage',
+	'move' => 'movelogpage',
+	'import' => 'importlogpage',
+	'patrol' => 'patrol-log-page',
+	'merge' => 'mergelog',
 	'suppress' => 'suppressionlog',
-);
+];
 
 /**
  * Lists the message key string for descriptive text to be shown at the
  * top of each log type.
  *
  * Extensions with custom log types may add to this array.
+ *
+ * @since 1.19, if you follow the naming convention log-description-TYPE,
+ * where TYPE is your log type, yoy don't need to use this array.
  */
-$wgLogHeaders = array(
-	''        => 'alllogstext',
-	'block'   => 'blocklogtext',
+$wgLogHeaders = [
+	'' => 'alllogstext',
+	'block' => 'blocklogtext',
+	'delete' => 'dellogpagetext',
+	'import' => 'importlogpagetext',
+	'merge' => 'mergelogpagetext',
+	'move' => 'movelogpagetext',
+	'patrol' => 'patrol-log-header',
 	'protect' => 'protectlogtext',
-	'rights'  => 'rightslogtext',
-	'delete'  => 'dellogpagetext',
-	'upload'  => 'uploadlogpagetext',
-	'move'    => 'movelogpagetext',
-	'import'  => 'importlogpagetext',
-	'patrol'  => 'patrol-log-header',
-	'merge'   => 'mergelogpagetext',
+	'rights' => 'rightslogtext',
 	'suppress' => 'suppressionlogtext',
-);
+	'upload' => 'uploadlogpagetext',
+];
 
 /**
  * Lists the message key string for formatting individual events of each
@@ -4842,43 +7697,124 @@ $wgLogHeaders = array(
  *
  * Extensions with custom log types may add to this array.
  */
-$wgLogActions = array(
-	'block/block'       => 'blocklogentry',
-	'block/unblock'     => 'unblocklogentry',
-	'block/reblock'     => 'reblock-logentry',
-	'protect/protect'   => 'protectedarticle',
-	'protect/modify'    => 'modifiedarticleprotection',
-	'protect/unprotect' => 'unprotectedarticle',
-	'protect/move_prot' => 'movedarticleprotection',
-	'rights/rights'     => 'rightslogentry',
-	'rights/disable'    => 'disableaccount-logentry',
-	'delete/delete'     => 'deletedarticle',
-	'delete/restore'    => 'undeletedarticle',
-	'delete/revision'   => 'revdelete-logentry',
-	'delete/event'      => 'logdelete-logentry',
-	'upload/upload'     => 'uploadedimage',
-	'upload/overwrite'  => 'overwroteimage',
-	'upload/revert'     => 'uploadedimage',
-	'move/move'         => '1movedto2',
-	'move/move_redir'   => '1movedto2_redir',
-	'import/upload'     => 'import-logentry-upload',
-	'import/interwiki'  => 'import-logentry-interwiki',
-	'merge/merge'       => 'pagemerge-logentry',
-	'suppress/revision' => 'revdelete-logentry',
-	'suppress/file'     => 'revdelete-logentry',
-	'suppress/event'    => 'logdelete-logentry',
-	'suppress/delete'   => 'suppressedarticle',
-	'suppress/block'    => 'blocklogentry',
-	'suppress/reblock'  => 'reblock-logentry',
-	'patrol/patrol'     => 'patrol-log-line',
-);
+$wgLogActions = [];
 
 /**
- * The same as above, but here values are names of functions,
+ * The same as above, but here values are names of classes,
  * not messages.
  * @see LogPage::actionText
+ * @see LogFormatter
  */
-$wgLogActionsHandlers = array();
+$wgLogActionsHandlers = [
+	'block/block' => BlockLogFormatter::class,
+	'block/reblock' => BlockLogFormatter::class,
+	'block/unblock' => BlockLogFormatter::class,
+	'contentmodel/change' => ContentModelLogFormatter::class,
+	'contentmodel/new' => ContentModelLogFormatter::class,
+	'delete/delete' => DeleteLogFormatter::class,
+	'delete/delete_redir' => DeleteLogFormatter::class,
+	'delete/event' => DeleteLogFormatter::class,
+	'delete/restore' => DeleteLogFormatter::class,
+	'delete/revision' => DeleteLogFormatter::class,
+	'import/interwiki' => ImportLogFormatter::class,
+	'import/upload' => ImportLogFormatter::class,
+	'managetags/activate' => LogFormatter::class,
+	'managetags/create' => LogFormatter::class,
+	'managetags/deactivate' => LogFormatter::class,
+	'managetags/delete' => LogFormatter::class,
+	'merge/merge' => MergeLogFormatter::class,
+	'move/move' => MoveLogFormatter::class,
+	'move/move_redir' => MoveLogFormatter::class,
+	'patrol/patrol' => PatrolLogFormatter::class,
+	'patrol/autopatrol' => PatrolLogFormatter::class,
+	'protect/modify' => ProtectLogFormatter::class,
+	'protect/move_prot' => ProtectLogFormatter::class,
+	'protect/protect' => ProtectLogFormatter::class,
+	'protect/unprotect' => ProtectLogFormatter::class,
+	'rights/autopromote' => RightsLogFormatter::class,
+	'rights/rights' => RightsLogFormatter::class,
+	'suppress/block' => BlockLogFormatter::class,
+	'suppress/delete' => DeleteLogFormatter::class,
+	'suppress/event' => DeleteLogFormatter::class,
+	'suppress/reblock' => BlockLogFormatter::class,
+	'suppress/revision' => DeleteLogFormatter::class,
+	'tag/update' => TagLogFormatter::class,
+	'upload/overwrite' => UploadLogFormatter::class,
+	'upload/revert' => UploadLogFormatter::class,
+	'upload/upload' => UploadLogFormatter::class,
+];
+
+/**
+ * List of log types that can be filtered by action types
+ *
+ * To each action is associated the list of log_action
+ * subtypes to search for, usually one, but not necessarily so
+ * Extensions may append to this array
+ * @since 1.27
+ */
+$wgActionFilteredLogs = [
+	'block' => [
+		'block' => [ 'block' ],
+		'reblock' => [ 'reblock' ],
+		'unblock' => [ 'unblock' ],
+	],
+	'contentmodel' => [
+		'change' => [ 'change' ],
+		'new' => [ 'new' ],
+	],
+	'delete' => [
+		'delete' => [ 'delete' ],
+		'delete_redir' => [ 'delete_redir' ],
+		'restore' => [ 'restore' ],
+		'event' => [ 'event' ],
+		'revision' => [ 'revision' ],
+	],
+	'import' => [
+		'interwiki' => [ 'interwiki' ],
+		'upload' => [ 'upload' ],
+	],
+	'managetags' => [
+		'create' => [ 'create' ],
+		'delete' => [ 'delete' ],
+		'activate' => [ 'activate' ],
+		'deactivate' => [ 'deactivate' ],
+	],
+	'move' => [
+		'move' => [ 'move' ],
+		'move_redir' => [ 'move_redir' ],
+	],
+	'newusers' => [
+		'create' => [ 'create', 'newusers' ],
+		'create2' => [ 'create2' ],
+		'autocreate' => [ 'autocreate' ],
+		'byemail' => [ 'byemail' ],
+	],
+	'patrol' => [
+		'patrol' => [ 'patrol' ],
+		'autopatrol' => [ 'autopatrol' ],
+	],
+	'protect' => [
+		'protect' => [ 'protect' ],
+		'modify' => [ 'modify' ],
+		'unprotect' => [ 'unprotect' ],
+		'move_prot' => [ 'move_prot' ],
+	],
+	'rights' => [
+		'rights' => [ 'rights' ],
+		'autopromote' => [ 'autopromote' ],
+	],
+	'suppress' => [
+		'event' => [ 'event' ],
+		'revision' => [ 'revision' ],
+		'delete' => [ 'delete' ],
+		'block' => [ 'block' ],
+		'reblock' => [ 'reblock' ],
+	],
+	'upload' => [
+		'upload' => [ 'upload' ],
+		'overwrite' => [ 'overwrite' ],
+	],
+];
 
 /**
  * Maintain a log of newusers at Log/newusers?
@@ -4904,114 +7840,6 @@ $wgAllowSpecialInclusion = true;
 $wgDisableQueryPageUpdate = false;
 
 /**
- * List of special pages, followed by what subtitle they should go under
- * at Special:SpecialPages
- */
-$wgSpecialPageGroups = array(
-	'DoubleRedirects'           => 'maintenance',
-	'BrokenRedirects'           => 'maintenance',
-	'Lonelypages'               => 'maintenance',
-	'Uncategorizedpages'        => 'maintenance',
-	'Uncategorizedcategories'   => 'maintenance',
-	'Uncategorizedimages'       => 'maintenance',
-	'Uncategorizedtemplates'    => 'maintenance',
-	'Unusedcategories'          => 'maintenance',
-	'Unusedimages'              => 'maintenance',
-	'Protectedpages'            => 'maintenance',
-	'Protectedtitles'           => 'maintenance',
-	'Unusedtemplates'           => 'maintenance',
-	'Withoutinterwiki'          => 'maintenance',
-	'Longpages'                 => 'maintenance',
-	'Shortpages'                => 'maintenance',
-	'Ancientpages'              => 'maintenance',
-	'Deadendpages'              => 'maintenance',
-	'Wantedpages'               => 'maintenance',
-	'Wantedcategories'          => 'maintenance',
-	'Wantedfiles'               => 'maintenance',
-	'Wantedtemplates'           => 'maintenance',
-	'Unwatchedpages'            => 'maintenance',
-	'Fewestrevisions'           => 'maintenance',
-
-	'Userlogin'                 => 'login',
-	'Userlogout'                => 'login',
-	'CreateAccount'             => 'login',
-
-	'Recentchanges'             => 'changes',
-	'Recentchangeslinked'       => 'changes',
-	'Watchlist'                 => 'changes',
-	'Newimages'                 => 'changes',
-	'Newpages'                  => 'changes',
-	'Log'                       => 'changes',
-	'Tags'                      => 'changes',
-
-	'Upload'                    => 'media',
-	'Listfiles'                 => 'media',
-	'MIMEsearch'                => 'media',
-	'FileDuplicateSearch'       => 'media',
-	'Filepath'                  => 'media',
-
-	'Listusers'                 => 'users',
-	'Activeusers'               => 'users',
-	'Listgrouprights'           => 'users',
-	'BlockList'                 => 'users',
-	'Contributions'             => 'users',
-	'Emailuser'                 => 'users',
-	'Listadmins'                => 'users',
-	'Listbots'                  => 'users',
-	'Userrights'                => 'users',
-	'Block'                     => 'users',
-	'Unblock'                   => 'users',
-	'Preferences'               => 'users',
-	'ChangePassword'            => 'users',
-	'DeletedContributions'      => 'users',
-
-	'Mostlinked'                => 'highuse',
-	'Mostlinkedcategories'      => 'highuse',
-	'Mostlinkedtemplates'       => 'highuse',
-	'Mostcategories'            => 'highuse',
-	'Mostimages'                => 'highuse',
-	'Mostrevisions'             => 'highuse',
-
-	'Allpages'                  => 'pages',
-	'Prefixindex'               => 'pages',
-	'Listredirects'             => 'pages',
-	'Categories'                => 'pages',
-	'Disambiguations'           => 'pages',
-
-	'Randompage'                => 'redirects',
-	'Randomredirect'            => 'redirects',
-	'Mypage'                    => 'redirects',
-	'Mytalk'                    => 'redirects',
-	'Mycontributions'           => 'redirects',
-	'Search'                    => 'redirects',
-	'LinkSearch'                => 'redirects',
-
-	'ComparePages'              => 'pagetools',
-	'Movepage'                  => 'pagetools',
-	'MergeHistory'              => 'pagetools',
-	'Revisiondelete'            => 'pagetools',
-	'Undelete'                  => 'pagetools',
-	'Export'                    => 'pagetools',
-	'Import'                    => 'pagetools',
-	'Whatlinkshere'             => 'pagetools',
-
-	'Statistics'                => 'wiki',
-	'Version'                   => 'wiki',
-	'Lockdb'                    => 'wiki',
-	'Unlockdb'                  => 'wiki',
-	'Allmessages'               => 'wiki',
-	'Popularpages'              => 'wiki',
-
-	'Specialpages'              => 'other',
-	'Blockme'                   => 'other',
-	'Booksources'               => 'other',
-);
-
-/** Whether or not to sort special pages in Special:Specialpages */
-
-$wgSortSpecialPages = true;
-
-/**
  * On Special:Unusedimages, consider images "used", if they are put
  * into a category. Default (false) is not to count those as used.
  */
@@ -5031,29 +7859,36 @@ $wgMaxRedirectLinksRetrieved = 500;
  */
 
 /**
- * Array of allowed values for the title=foo&action=<action> parameter. Syntax is:
+ * Array of allowed values for the "title=foo&action=<action>" parameter. Syntax is:
  *     'foo' => 'ClassName'    Load the specified class which subclasses Action
  *     'foo' => true           Load the class FooAction which subclasses Action
+ *                             If something is specified in the getActionOverrides()
+ *                             of the relevant Page object it will be used
+ *                             instead of the default class.
  *     'foo' => false          The action is disabled; show an error message
  * Unsetting core actions will probably cause things to complain loudly.
  */
-$wgActions = array(
+$wgActions = [
 	'credits' => true,
+	'delete' => true,
+	'edit' => true,
+	'editchangetags' => SpecialPageAction::class,
+	'history' => true,
+	'info' => true,
+	'markpatrolled' => true,
+	'protect' => true,
 	'purge' => true,
+	'raw' => true,
+	'render' => true,
+	'revert' => true,
+	'revisiondelete' => SpecialPageAction::class,
+	'rollback' => true,
+	'submit' => true,
+	'unprotect' => true,
 	'unwatch' => true,
+	'view' => true,
 	'watch' => true,
-);
-
-/**
- * Array of disabled article actions, e.g. view, edit, dublincore, delete, etc.
- * @deprecated since 1.18; just set $wgActions['action'] = false instead
- */
-$wgDisabledActions = array();
-
-/**
- * Allow the "info" action, very inefficient at the moment
- */
-$wgAllowPageInfo = false;
+];
 
 /** @} */ # end actions }
 
@@ -5079,36 +7914,50 @@ $wgDefaultRobotPolicy = 'index,follow';
  * URLs, so search engine spiders risk getting lost in a maze of twisty special
  * pages, all alike, and never reaching your actual content.
  *
- * Example:
- *   $wgNamespaceRobotPolicies = array( NS_TALK => 'noindex' );
+ * @par Example:
+ * @code
+ *   $wgNamespaceRobotPolicies = [ NS_TALK => 'noindex' ];
+ * @endcode
  */
-$wgNamespaceRobotPolicies = array();
+$wgNamespaceRobotPolicies = [];
 
 /**
  * Robot policies per article. These override the per-namespace robot policies.
- * Must be in the form of an array where the key part is a properly canonical-
- * ised text form title and the value is a robot policy.
- * Example:
- *   $wgArticleRobotPolicies = array( 'Main Page' => 'noindex,follow',
- *     'User:Bob' => 'index,follow' );
- * Example that DOES NOT WORK because the names are not canonical text forms:
- *   $wgArticleRobotPolicies = array(
+ * Must be in the form of an array where the key part is a properly canonicalised
+ * text form title and the value is a robot policy.
+ *
+ * @par Example:
+ * @code
+ * $wgArticleRobotPolicies = [
+ *         'Main Page' => 'noindex,follow',
+ *         'User:Bob' => 'index,follow',
+ * ];
+ * @endcode
+ *
+ * @par Example that DOES NOT WORK because the names are not canonical text
+ * forms:
+ * @code
+ *   $wgArticleRobotPolicies = [
  *     # Underscore, not space!
  *     'Main_Page' => 'noindex,follow',
  *     # "Project", not the actual project name!
  *     'Project:X' => 'index,follow',
  *     # Needs to be "Abc", not "abc" (unless $wgCapitalLinks is false for that namespace)!
  *     'abc' => 'noindex,nofollow'
- *   );
+ *   ];
+ * @endcode
  */
-$wgArticleRobotPolicies = array();
+$wgArticleRobotPolicies = [];
 
 /**
  * An array of namespace keys in which the __INDEX__/__NOINDEX__ magic words
  * will not function, so users can't decide whether pages in that namespace are
  * indexed by search engines.  If set to null, default to $wgContentNamespaces.
- * Example:
- *   $wgExemptFromUserRobotsControl = array( NS_MAIN, NS_TALK, NS_PROJECT );
+ *
+ * @par Example:
+ * @code
+ *   $wgExemptFromUserRobotsControl = [ NS_MAIN, NS_TALK, NS_PROJECT ];
+ * @endcode
  */
 $wgExemptFromUserRobotsControl = null;
 
@@ -5126,7 +7975,9 @@ $wgExemptFromUserRobotsControl = null;
  * Enable the MediaWiki API for convenient access to
  * machine-readable data via api.php
  *
- * See http://www.mediawiki.org/wiki/API
+ * See https://www.mediawiki.org/wiki/API
+ *
+ * @deprecated since 1.31
  */
 $wgEnableAPI = true;
 
@@ -5134,18 +7985,100 @@ $wgEnableAPI = true;
  * Allow the API to be used to perform write operations
  * (page edits, rollback, etc.) when an authorised user
  * accesses it
+ *
+ * @deprecated since 1.31
  */
 $wgEnableWriteAPI = true;
 
 /**
- * API module extensions
- * Associative array mapping module name to class name.
- * Extension modules may override the core modules.
+ *
+ *     WARNING: SECURITY THREAT - debug use only
+ *
+ * Disables many security checks in the API for debugging purposes.
+ * This flag should never be used on the production servers, as it introduces
+ * a number of potential security holes. Even when enabled, the validation
+ * will still be performed, but instead of failing, API will return a warning.
+ * Also, there will always be a warning notifying that this flag is set.
+ * At this point, the flag allows GET requests to go through for modules
+ * requiring POST.
+ *
+ * @since 1.21
  */
-$wgAPIModules = array();
-$wgAPIMetaModules = array();
-$wgAPIPropModules = array();
-$wgAPIListModules = array();
+$wgDebugAPI = false;
+
+/**
+ * API module extensions.
+ *
+ * Associative array mapping module name to modules specs;
+ * Each module spec is an associative array containing at least
+ * the 'class' key for the module's class, and optionally a
+ * 'factory' key for the factory function to use for the module.
+ *
+ * That factory function will be called with two parameters,
+ * the parent module (an instance of ApiBase, usually ApiMain)
+ * and the name the module was registered under. The return
+ * value must be an instance of the class given in the 'class'
+ * field.
+ *
+ * For backward compatibility, the module spec may also be a
+ * simple string containing the module's class name. In that
+ * case, the class' constructor will be called with the parent
+ * module and module name as parameters, as described above.
+ *
+ * Examples for registering API modules:
+ *
+ * @code
+ *  $wgAPIModules['foo'] = 'ApiFoo';
+ *  $wgAPIModules['bar'] = [
+ *    'class' => ApiBar::class,
+ *    'factory' => function( $main, $name ) { ... }
+ *  ];
+ *  $wgAPIModules['xyzzy'] = [
+ *    'class' => ApiXyzzy::class,
+ *    'factory' => [ XyzzyFactory::class, 'newApiModule' ]
+ *  ];
+ * @endcode
+ *
+ * Extension modules may override the core modules.
+ * See ApiMain::$Modules for a list of the core modules.
+ */
+$wgAPIModules = [];
+
+/**
+ * API format module extensions.
+ * Associative array mapping format module name to module specs (see $wgAPIModules).
+ * Extension modules may override the core modules.
+ *
+ * See ApiMain::$Formats for a list of the core format modules.
+ */
+$wgAPIFormatModules = [];
+
+/**
+ * API Query meta module extensions.
+ * Associative array mapping meta module name to module specs (see $wgAPIModules).
+ * Extension modules may override the core modules.
+ *
+ * See ApiQuery::$QueryMetaModules for a list of the core meta modules.
+ */
+$wgAPIMetaModules = [];
+
+/**
+ * API Query prop module extensions.
+ * Associative array mapping prop module name to module specs (see $wgAPIModules).
+ * Extension modules may override the core modules.
+ *
+ * See ApiQuery::$QueryPropModules for a list of the core prop modules.
+ */
+$wgAPIPropModules = [];
+
+/**
+ * API Query list module extensions.
+ * Associative array mapping list module name to module specs (see $wgAPIModules).
+ * Extension modules may override the core modules.
+ *
+ * See ApiQuery::$QueryListModules for a list of the core list modules.
+ */
+$wgAPIListModules = [];
 
 /**
  * Maximum amount of rows to scan in a DB query in the API
@@ -5155,7 +8088,7 @@ $wgAPIMaxDBRows = 5000;
 
 /**
  * The maximum size (in bytes) of an API result.
- * Don't set this lower than $wgMaxArticleSize*1024
+ * @warning Do not set this lower than $wgMaxArticleSize*1024
  */
 $wgAPIMaxResultSize = 8388608;
 
@@ -5166,6 +8099,13 @@ $wgAPIMaxResultSize = 8388608;
 $wgAPIMaxUncachedDiffs = 1;
 
 /**
+ * Maximum amount of DB lag on a majority of DB replica DBs to tolerate
+ * before forcing bots to retry any write requests via API errors.
+ * This should be lower than the 'max lag' value in $wgLBFactoryConf.
+ */
+$wgAPIMaxLagThreshold = 7;
+
+/**
  * Log file or URL (TCP or UDP) to log API requests to, or false to disable
  * API request logging
  */
@@ -5174,24 +8114,31 @@ $wgAPIRequestLog = false;
 /**
  * Set the timeout for the API help text cache. If set to 0, caching disabled
  */
-$wgAPICacheHelpTimeout = 60*60;
+$wgAPICacheHelpTimeout = 60 * 60;
+
+/**
+ * The ApiQueryQueryPages module should skip pages that are redundant to true
+ * API queries.
+ */
+$wgAPIUselessQueryPages = [
+	'MIMEsearch', // aiprop=mime
+	'LinkSearch', // list=exturlusage
+	'FileDuplicateSearch', // prop=duplicatefiles
+];
 
 /**
  * Enable AJAX framework
+ *
+ * @deprecated (officially) since MediaWiki 1.31
  */
 $wgUseAjax = true;
 
 /**
  * List of Ajax-callable functions.
  * Extensions acting as Ajax callbacks must register here
+ * @deprecated (officially) since 1.27; use the API instead
  */
-$wgAjaxExportList = array();
-
-/**
- * Enable watching/unwatching pages using AJAX.
- * Requires $wgUseAjax to be true too.
- */
-$wgAjaxWatch = true;
+$wgAjaxExportList = [];
 
 /**
  * Enable AJAX check for file overwrite, pre-upload
@@ -5204,33 +8151,39 @@ $wgAjaxUploadDestCheck = true;
 $wgAjaxLicensePreview = true;
 
 /**
+ * Have clients send edits to be prepared when filling in edit summaries.
+ * This gives the server a head start on the expensive parsing operation.
+ */
+$wgAjaxEditStash = true;
+
+/**
  * Settings for incoming cross-site AJAX requests:
  * Newer browsers support cross-site AJAX when the target resource allows requests
  * from the origin domain by the Access-Control-Allow-Origin header.
  * This is currently only used by the API (requests to api.php)
  * $wgCrossSiteAJAXdomains can be set using a wildcard syntax:
  *
- * '*' matches any number of characters
- * '?' matches any 1 character
+ * - '*' matches any number of characters
+ * - '?' matches any 1 character
  *
- * Example:
- $wgCrossSiteAJAXdomains = array(
-  'www.mediawiki.org',
-  '*.wikipedia.org',
-  '*.wikimedia.org',
-  '*.wiktionary.org',
- );
- *
+ * @par Example:
+ * @code
+ * $wgCrossSiteAJAXdomains = [
+ *     'www.mediawiki.org',
+ *     '*.wikipedia.org',
+ *     '*.wikimedia.org',
+ *     '*.wiktionary.org',
+ * ];
+ * @endcode
  */
-$wgCrossSiteAJAXdomains = array();
+$wgCrossSiteAJAXdomains = [];
 
 /**
  * Domains that should not be allowed to make AJAX requests,
  * even if they match one of the domains allowed by $wgCrossSiteAJAXdomains
  * Uses the same syntax as $wgCrossSiteAJAXdomains
  */
-
-$wgCrossSiteAJAXdomainExceptions = array();
+$wgCrossSiteAJAXdomainExceptions = [];
 
 /** @} */ # End AJAX and API }
 
@@ -5242,7 +8195,7 @@ $wgCrossSiteAJAXdomainExceptions = array();
 /**
  * Maximum amount of virtual memory available to shell processes under linux, in KB.
  */
-$wgMaxShellMemory = 102400;
+$wgMaxShellMemory = 307200;
 
 /**
  * Maximum file size created by shell processes under linux, in KB
@@ -5251,21 +8204,97 @@ $wgMaxShellMemory = 102400;
 $wgMaxShellFileSize = 102400;
 
 /**
- * Maximum CPU time in seconds for shell processes under linux
+ * Maximum CPU time in seconds for shell processes under Linux
  */
 $wgMaxShellTime = 180;
 
 /**
- * Executable path of the PHP cli binary (php/php5). Should be set up on install.
+ * Maximum wall clock time (i.e. real time, of the kind the clock on the wall
+ * would measure) in seconds for shell processes under Linux
+ */
+$wgMaxShellWallClockTime = 180;
+
+/**
+ * Under Linux: a cgroup directory used to constrain memory usage of shell
+ * commands. The directory must be writable by the user which runs MediaWiki.
+ *
+ * If specified, this is used instead of ulimit, which is inaccurate, and
+ * causes malloc() to return NULL, which exposes bugs in C applications, making
+ * them segfault or deadlock.
+ *
+ * A wrapper script will create a cgroup for each shell command that runs, as
+ * a subgroup of the specified cgroup. If the memory limit is exceeded, the
+ * kernel will send a SIGKILL signal to a process in the subgroup.
+ *
+ * @par Example:
+ * @code
+ *    mkdir -p /sys/fs/cgroup/memory/mediawiki
+ *    mkdir -m 0777 /sys/fs/cgroup/memory/mediawiki/job
+ *    echo '$wgShellCgroup = "/sys/fs/cgroup/memory/mediawiki/job";' >> LocalSettings.php
+ * @endcode
+ *
+ * The reliability of cgroup cleanup can be improved by installing a
+ * notify_on_release script in the root cgroup, see e.g.
+ * https://gerrit.wikimedia.org/r/#/c/40784
+ */
+$wgShellCgroup = false;
+
+/**
+ * Executable path of the PHP cli binary. Should be set up on install.
  */
 $wgPhpCli = '/usr/bin/php';
 
 /**
- * Locale for LC_CTYPE, to work around http://bugs.php.net/bug.php?id=45132
- * For Unix-like operating systems, set this to to a locale that has a UTF-8
- * character set. Only the character set is relevant.
+ * Locale for LC_ALL, to provide a known environment for locale-sensitive operations
+ *
+ * For Unix-like operating systems, this should be set to C.UTF-8 or an
+ * equivalent to provide the most consistent behavior for locale-sensitive
+ * C library operations across different-language wikis. If that locale is not
+ * available, use another locale that has a UTF-8 character set.
+ *
+ * This setting mainly affects the behavior of C library functions, including:
+ *  - String collation (order when sorting using locale-sensitive comparison)
+ *    - For example, whether "Å" and "A" are considered to be the same letter or
+ *      different letters and if different whether it comes after "A" or after
+ *      "Z", and whether sorting is case sensitive.
+ *  - String character set (how characters beyond basic ASCII are represented)
+ *    - We need this to be a UTF-8 character set to work around
+ *      https://bugs.php.net/bug.php?id=45132
+ *  - Language used for low-level error messages.
+ *  - Formatting of date/time and numeric values (e.g. '.' versus ',' as the
+ *    decimal separator)
+ *
+ * MediaWiki provides its own methods and classes to perform many
+ * locale-sensitive operations, which are designed to be able to vary locale
+ * based on wiki language or user preference:
+ *  - MediaWiki's Collation class should generally be used instead of the C
+ *    library collation functions when locale-sensitive sorting is needed.
+ *  - MediaWiki's Message class should be used for localization of messages
+ *    displayed to the user.
+ *  - MediaWiki's Language class should be used for formatting numeric and
+ *    date/time values.
+ *
+ * @note If multiple wikis are being served from the same process (e.g. the
+ *  same fastCGI or Apache server), this setting must be the same on all those
+ *  wikis.
  */
-$wgShellLocale = 'en_US.utf8';
+$wgShellLocale = 'C.UTF-8';
+
+/**
+ * Method to use to restrict shell commands
+ *
+ * Supported options:
+ * - 'autodetect': Autodetect if any restriction methods are available
+ * - 'firejail': Use firejail <https://firejail.wordpress.com/>
+ * - false: Don't use any restrictions
+ *
+ * @note If using firejail with MediaWiki running in a home directory different
+ *  from the webserver user, firejail 0.9.44+ is required.
+ *
+ * @since 1.31
+ * @var string|bool
+ */
+$wgShellRestrictionMethod = false;
 
 /** @} */ # End shell }
 
@@ -5275,12 +8304,19 @@ $wgShellLocale = 'en_US.utf8';
  */
 
 /**
- * Timeout for HTTP requests done internally
+ * Timeout for HTTP requests done internally, in seconds.
+ * @var int
  */
 $wgHTTPTimeout = 25;
 
 /**
- * Timeout for Asynchronous (background) HTTP requests
+ * Timeout for HTTP requests done internally for transwiki imports, in seconds.
+ * @since 1.29
+ */
+$wgHTTPImportTimeout = 25;
+
+/**
+ * Timeout for Asynchronous (background) HTTP requests, in seconds.
  */
 $wgAsyncHTTPTimeout = 25;
 
@@ -5289,11 +8325,31 @@ $wgAsyncHTTPTimeout = 25;
  */
 $wgHTTPProxy = false;
 
+/**
+ * Local virtual hosts.
+ *
+ * This lists domains that are configured as virtual hosts on the same machine.
+ *
+ * This affects the following:
+ * - MWHttpRequest: If a request is to be made to a domain listed here, or any
+ *   subdomain thereof, then no proxy will be used.
+ *   Command-line scripts are not affected by this setting and will always use
+ *   the proxy if it is configured.
+ *
+ * @since 1.25
+ */
+$wgLocalVirtualHosts = [];
+
+/**
+ * Timeout for connections done internally (in seconds)
+ * Only works for curl
+ */
+$wgHTTPConnectTimeout = 5e0;
+
 /** @} */ # End HTTP client }
 
 /************************************************************************//**
  * @name   Job queue
- * See also $wgEnotifUseJobQ.
  * @{
  */
 
@@ -5306,9 +8362,18 @@ $wgHTTPProxy = false;
 $wgJobRunRate = 1;
 
 /**
+ * When $wgJobRunRate > 0, try to run jobs asynchronously, spawning a new process
+ * to handle the job execution, instead of blocking the request until the job
+ * execution finishes.
+ *
+ * @since 1.23
+ */
+$wgRunJobsAsync = false;
+
+/**
  * Number of rows to update per job
  */
-$wgUpdateRowsPerJob = 500;
+$wgUpdateRowsPerJob = 300;
 
 /**
  * Number of rows to update per query
@@ -5322,14 +8387,35 @@ $wgUpdateRowsPerQuery = 100;
  * @{
  */
 
-/** Name of the external diff engine to use */
+/**
+ * Name of the external diff engine to use. Supported values:
+ * * string: path to an external diff executable
+ * * false: wikidiff2 PHP/HHVM module if installed, otherwise the default PHP implementation
+ * * 'wikidiff', 'wikidiff2', and 'wikidiff3' are treated as false for backwards compatibility
+ */
 $wgExternalDiffEngine = false;
 
 /**
+ * wikidiff2 supports detection of changes in moved paragraphs.
+ * This setting controls the maximum number of paragraphs to compare before it bails out.
+ * Supported values:
+ * * 0: detection of moved paragraphs is disabled
+ * * int > 0: maximum number of paragraphs to compare
+ * Note: number of paragraph comparisons is in O(n^2).
+ * This setting is only effective if the wikidiff2 PHP/HHVM module is used as diffengine.
+ * See $wgExternalDiffEngine.
+ *
+ * @since 1.30
+ */
+$wgWikiDiff2MovedParagraphDetectionCutoff = 0;
+
+/**
  * Disable redirects to special pages and interwiki redirects, which use a 302
- * and have no "redirected from" link. Note this is only for articles with #Redirect
- * in them. URL's containing a local interwiki prefix (or a non-canonical special
- * page name) are still hard redirected regardless of this setting.
+ * and have no "redirected from" link.
+ *
+ * @note This is only for articles with #REDIRECT in them. URL's containing a
+ * local interwiki prefix (or a non-canonical special page name) are still hard
+ * redirected regardless of this setting.
  */
 $wgDisableHardRedirects = false;
 
@@ -5340,8 +8426,8 @@ $wgDisableHardRedirects = false;
 $wgLinkHolderBatchSize = 1000;
 
 /**
- * By default MediaWiki does not register links pointing to same server in externallinks dataset,
- * use this value to override:
+ * By default MediaWiki does not register links pointing to same server in
+ * externallinks dataset, use this value to override:
  */
 $wgRegisterInternalExternals = false;
 
@@ -5369,15 +8455,30 @@ $wgRedirectOnLogin = null;
  * This configuration array maps pool types to an associative array. The only
  * defined key in the associative array is "class", which gives the class name.
  * The remaining elements are passed through to the class as constructor
- * parameters. Example:
+ * parameters.
  *
- *   $wgPoolCounterConf = array( 'ArticleView' => array(
- *     'class' => 'PoolCounter_Client',
+ * @par Example using local redis instance:
+ * @code
+ *   $wgPoolCounterConf = [ 'ArticleView' => [
+ *     'class' => PoolCounterRedis::class,
+ *     'timeout' => 15, // wait timeout in seconds
+ *     'workers' => 1, // maximum number of active threads in each pool
+ *     'maxqueue' => 5, // maximum number of total threads in each pool
+ *     'servers' => [ '127.0.0.1' ],
+ *     'redisConfig' => []
+ *   ] ];
+ * @endcode
+ *
+ * @par Example using C daemon from https://www.mediawiki.org/wiki/Extension:PoolCounter:
+ * @code
+ *   $wgPoolCounterConf = [ 'ArticleView' => [
+ *     'class' => PoolCounter_Client::class,
  *     'timeout' => 15, // wait timeout in seconds
  *     'workers' => 5, // maximum number of active threads in each pool
  *     'maxqueue' => 50, // maximum number of total threads in each pool
  *     ... any extension-specific options...
- *   );
+ *   ] ];
+ * @endcode
  */
 $wgPoolCounterConf = null;
 
@@ -5387,13 +8488,338 @@ $wgPoolCounterConf = null;
 $wgUploadMaintenance = false;
 
 /**
- * Allows running of selenium tests via maintenance/tests/RunSeleniumTests.php
+ * Associative array mapping namespace IDs to the name of the content model pages in that namespace
+ * should have by default (use the CONTENT_MODEL_XXX constants). If no special content type is
+ * defined for a given namespace, pages in that namespace will use the CONTENT_MODEL_WIKITEXT
+ * (except for the special case of JS and CS pages).
+ *
+ * @since 1.21
  */
-$wgEnableSelenium = false;
-$wgSeleniumTestConfigs = array();
-$wgSeleniumConfigFile = null;
-$wgDBtestuser = ''; //db user that has permission to create and drop the test databases only
-$wgDBtestpassword = '';
+$wgNamespaceContentModels = [];
+
+/**
+ * How to react if a plain text version of a non-text Content object is requested using
+ * ContentHandler::getContentText():
+ *
+ * * 'ignore': return null
+ * * 'fail': throw an MWException
+ * * 'serialize': serialize to default format
+ *
+ * @since 1.21
+ */
+$wgContentHandlerTextFallback = 'ignore';
+
+/**
+ * Set to false to disable use of the database fields introduced by the ContentHandler facility.
+ * This way, the ContentHandler facility can be used without any additional information in the
+ * database. A page's content model is then derived solely from the page's title. This however
+ * means that changing a page's default model (e.g. using $wgNamespaceContentModels) will break
+ * the page and/or make the content inaccessible. This also means that pages can not be moved to
+ * a title that would default to a different content model.
+ *
+ * Overall, with $wgContentHandlerUseDB = false, no database updates are needed, but content
+ * handling is less robust and less flexible.
+ *
+ * @since 1.21
+ */
+$wgContentHandlerUseDB = true;
+
+/**
+ * Determines which types of text are parsed as wikitext. This does not imply that these kinds
+ * of texts are also rendered as wikitext, it only means that links, magic words, etc will have
+ * the effect on the database they would have on a wikitext page.
+ *
+ * @todo On the long run, it would be nice to put categories etc into a separate structure,
+ * or at least parse only the contents of comments in the scripts.
+ *
+ * @since 1.21
+ */
+$wgTextModelsToParse = [
+	CONTENT_MODEL_WIKITEXT, // Just for completeness, wikitext will always be parsed.
+	CONTENT_MODEL_JAVASCRIPT, // Make categories etc work, people put them into comments.
+	CONTENT_MODEL_CSS, // Make categories etc work, people put them into comments.
+];
+
+/**
+ * Register handlers for specific types of sites.
+ *
+ * @since 1.20
+ */
+$wgSiteTypes = [
+	'mediawiki' => MediaWikiSite::class,
+];
+
+/**
+ * Whether the page_props table has a pp_sortkey column. Set to false in case
+ * the respective database schema change was not applied.
+ * @since 1.23
+ */
+$wgPagePropsHaveSortkey = true;
+
+/**
+ * Port where you have HTTPS running
+ * Supports HTTPS on non-standard ports
+ * @see T67184
+ * @since 1.24
+ */
+$wgHttpsPort = 443;
+
+/**
+ * Secret for session storage.
+ * This should be set in LocalSettings.php, otherwise wgSecretKey will
+ * be used.
+ * @since 1.27
+ */
+$wgSessionSecret = false;
+
+/**
+ * If for some reason you can't install the PHP OpenSSL or mcrypt extensions,
+ * you can set this to true to make MediaWiki work again at the cost of storing
+ * sensitive session data insecurely. But it would be much more secure to just
+ * install the OpenSSL extension.
+ * @since 1.27
+ */
+$wgSessionInsecureSecrets = false;
+
+/**
+ * Secret for hmac-based key derivation function (fast,
+ * cryptographically secure random numbers).
+ * This should be set in LocalSettings.php, otherwise wgSecretKey will
+ * be used.
+ * See also: $wgHKDFAlgorithm
+ * @since 1.24
+ */
+$wgHKDFSecret = false;
+
+/**
+ * Algorithm for hmac-based key derivation function (fast,
+ * cryptographically secure random numbers).
+ * See also: $wgHKDFSecret
+ * @since 1.24
+ */
+$wgHKDFAlgorithm = 'sha256';
+
+/**
+ * Enable page language feature
+ * Allows setting page language in database
+ * @var bool
+ * @since 1.24
+ */
+$wgPageLanguageUseDB = false;
+
+/**
+ * Global configuration variable for Virtual REST Services.
+ *
+ * Use the 'path' key to define automatically mounted services. The value for this
+ * key is a map of path prefixes to service configuration. The latter is an array of:
+ *   - class : the fully qualified class name
+ *   - options : map of arguments to the class constructor
+ * Such services will be available to handle queries under their path from the VRS
+ * singleton, e.g. MediaWikiServices::getInstance()->getVirtualRESTServiceClient();
+ *
+ * Auto-mounting example for Parsoid:
+ *
+ * $wgVirtualRestConfig['paths']['/parsoid/'] = [
+ *     'class' => ParsoidVirtualRESTService::class,
+ *     'options' => [
+ *         'url' => 'http://localhost:8000',
+ *         'prefix' => 'enwiki',
+ *         'domain' => 'en.wikipedia.org'
+ *     ]
+ * ];
+ *
+ * Parameters for different services can also be declared inside the 'modules' value,
+ * which is to be treated as an associative array. The parameters in 'global' will be
+ * merged with service-specific ones. The result will then be passed to
+ * VirtualRESTService::__construct() in the module.
+ *
+ * Example config for Parsoid:
+ *
+ *   $wgVirtualRestConfig['modules']['parsoid'] = [
+ *     'url' => 'http://localhost:8000',
+ *     'prefix' => 'enwiki',
+ *     'domain' => 'en.wikipedia.org',
+ *   ];
+ *
+ * @var array
+ * @since 1.25
+ */
+$wgVirtualRestConfig = [
+	'paths' => [],
+	'modules' => [],
+	'global' => [
+		# Timeout in seconds
+		'timeout' => 360,
+		# 'domain' is set to $wgCanonicalServer in Setup.php
+		'forwardCookies' => false,
+		'HTTPProxy' => null
+	]
+];
+
+/**
+ * Controls whether zero-result search queries with suggestions should display results for
+ * these suggestions.
+ *
+ * @var bool
+ * @since 1.26
+ */
+$wgSearchRunSuggestedQuery = true;
+
+/**
+ * Where popular password file is located.
+ *
+ * Default in core contains 10,000 most popular. This config
+ * allows you to change which file, in case you want to generate
+ * a password file with > 10000 entries in it.
+ *
+ * @see maintenance/createCommonPasswordCdb.php
+ * @since 1.27
+ * @var string path to file
+ */
+$wgPopularPasswordFile = __DIR__ . '/../serialized/commonpasswords.cdb';
+
+/*
+ * Max time (in seconds) a user-generated transaction can spend in writes.
+ * If exceeded, the transaction is rolled back with an error instead of being committed.
+ *
+ * @var int|bool Disabled if false
+ * @since 1.27
+ */
+$wgMaxUserDBWriteDuration = false;
+
+/*
+ * Max time (in seconds) a job-generated transaction can spend in writes.
+ * If exceeded, the transaction is rolled back with an error instead of being committed.
+ *
+ * @var int|bool Disabled if false
+ * @since 1.30
+ */
+$wgMaxJobDBWriteDuration = false;
+
+/**
+ * Mapping of event channels (or channel categories) to EventRelayer configuration.
+ *
+ * By setting up a PubSub system (like Kafka) and enabling a corresponding EventRelayer class
+ * that uses it, MediaWiki can broadcast events to all subscribers. Certain features like WAN
+ * cache purging and CDN cache purging will emit events to this system. Appropriate listers can
+ * subscribe to the channel and take actions based on the events. For example, a local daemon
+ * can run on each CDN cache node and perfom local purges based on the URL purge channel events.
+ *
+ * Some extensions may want to use "channel categories" so that different channels can also share
+ * the same custom relayer instance (e.g. when it's likely to be overriden). They can use
+ * EventRelayerGroup::getRelayer() based on the category but call notify() on various different
+ * actual channels. One reason for this would be that some system have very different performance
+ * vs durability needs, so one system (e.g. Kafka) may not be suitable for all uses.
+ *
+ * The 'default' key is for all channels (or channel categories) without an explicit entry here.
+ *
+ * @since 1.27
+ */
+$wgEventRelayerConfig = [
+	'default' => [
+		'class' => EventRelayerNull::class,
+	]
+];
+
+/**
+ * Share data about this installation with MediaWiki developers
+ *
+ * When set to true, MediaWiki will periodically ping https://www.mediawiki.org/ with basic
+ * data about this MediaWiki instance. This data includes, for example, the type of system,
+ * PHP version, and chosen database backend. The Wikimedia Foundation shares this data with
+ * MediaWiki developers to help guide future development efforts.
+ *
+ * For details about what data is sent, see: https://www.mediawiki.org/wiki/Manual:$wgPingback
+ *
+ * @var bool
+ * @since 1.28
+ */
+$wgPingback = false;
+
+/**
+ * List of urls which appear often to be triggering CSP reports
+ * but do not appear to be caused by actual content, but by client
+ * software inserting scripts (i.e. Ad-Ware).
+ * List based on results from Wikimedia logs.
+ *
+ * @since 1.28
+ */
+$wgCSPFalsePositiveUrls = [
+	'https://3hub.co' => true,
+	'https://morepro.info' => true,
+	'https://p.ato.mx' => true,
+	'https://s.ato.mx' => true,
+	'https://adserver.adtech.de' => true,
+	'https://ums.adtechus.com' => true,
+	'https://cas.criteo.com' => true,
+	'https://cat.nl.eu.criteo.com' => true,
+	'https://atpixel.alephd.com' => true,
+	'https://rtb.metrigo.com' => true,
+	'https://d5p.de17a.com' => true,
+	'https://ad.lkqd.net/vpaid/vpaid.js' => true,
+];
+
+/**
+ * Shortest CIDR limits that can be checked in any individual range check
+ * at Special:Contributions.
+ *
+ * @var array
+ * @since 1.30
+ */
+$wgRangeContributionsCIDRLimit = [
+	'IPv4' => 16,
+	'IPv6' => 32,
+];
+
+/**
+ * The following variables define 3 user experience levels:
+ *
+ *  - newcomer: has not yet reached the 'learner' level
+ *
+ *  - learner: has at least $wgLearnerEdits and has been
+ *             a member for $wgLearnerMemberSince days
+ *             but has not yet reached the 'experienced' level.
+ *
+ *  - experienced: has at least $wgExperiencedUserEdits edits and
+ *                 has been a member for $wgExperiencedUserMemberSince days.
+ */
+$wgLearnerEdits = 10;
+$wgLearnerMemberSince = 4; # days
+$wgExperiencedUserEdits = 500;
+$wgExperiencedUserMemberSince = 30; # days
+
+/**
+ * Mapping of interwiki index prefixes to descriptors that
+ * can be used to change the display of interwiki search results.
+ *
+ * Descriptors are appended to CSS classes of interwiki results
+ * which using InterwikiSearchResultWidget.
+ *
+ * Predefined descriptors include the following words:
+ * definition, textbook, news, quotation, book, travel, course
+ *
+ * @par Example:
+ * @code
+ * $wgInterwikiPrefixDisplayTypes = [
+ *	'iwprefix' => 'definition'
+ *];
+ * @endcode
+ */
+$wgInterwikiPrefixDisplayTypes = [];
+
+/**
+ * Comment table schema migration stage.
+ * @since 1.30
+ * @var int One of the MIGRATION_* constants
+ */
+$wgCommentTableSchemaMigrationStage = MIGRATION_OLD;
+
+/**
+ * Actor table schema migration stage.
+ * @since 1.31
+ * @var int One of the MIGRATION_* constants
+ */
+$wgActorTableSchemaMigrationStage = MIGRATION_OLD;
 
 /**
  * For really cool vim folding this needs to be at the end:

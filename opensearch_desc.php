@@ -1,14 +1,33 @@
 <?php
-
 /**
- * Generate an OpenSearch description file
+ * Generate an OpenSearch description file.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * http://www.gnu.org/copyleft/gpl.html
  *
  * @file
  */
 
-require_once( dirname(__FILE__) . '/includes/WebStart.php' );
+// This endpoint is supposed to be independent of request cookies and other
+// details of the session. Log warnings for violations of the no-session
+// constraint.
+define( 'MW_NO_SESSION', 'warn' );
 
-if( $wgRequest->getVal( 'ctype' ) == 'application/xml' ) {
+require_once __DIR__ . '/includes/WebStart.php';
+
+if ( $wgRequest->getVal( 'ctype' ) == 'application/xml' ) {
 	// Makes testing tweaks about a billion times easier
 	$ctype = 'application/xml';
 } else {
@@ -26,58 +45,64 @@ $response->header( 'Cache-control: max-age=600' );
 
 print '<?xml version="1.0"?>';
 print Xml::openElement( 'OpenSearchDescription',
-	array(
+	[
 		'xmlns' => 'http://a9.com/-/spec/opensearch/1.1/',
-		'xmlns:moz' => 'http://www.mozilla.org/2006/browser/search/' ) );
+		'xmlns:moz' => 'http://www.mozilla.org/2006/browser/search/' ] );
 
-// The spec says the ShortName must be no longer than 16 characters,
-// but 16 is *realllly* short. In practice, browsers don't appear to care
-// when we give them a longer string, so we're no longer attempting to trim.
-//
-// Note: ShortName and the <link title=""> need to match; they are used as
-// a key for identifying if the search engine has been added already, *and*
-// as the display name presented to the end-user.
-//
-// Behavior seems about the same between Firefox and IE 7/8 here.
-// 'Description' doesn't appear to be used by either.
-$fullName = wfMsgForContent( 'opensearch-desc' );
+/* The spec says the ShortName must be no longer than 16 characters,
+ * but 16 is *realllly* short. In practice, browsers don't appear to care
+ * when we give them a longer string, so we're no longer attempting to trim.
+ *
+ * Note: ShortName and the <link title=""> need to match; they are used as
+ * a key for identifying if the search engine has been added already, *and*
+ * as the display name presented to the end-user.
+ *
+ * Behavior seems about the same between Firefox and IE 7/8 here.
+ * 'Description' doesn't appear to be used by either.
+ */
+$fullName = wfMessage( 'opensearch-desc' )->inContentLanguage()->text();
 print Xml::element( 'ShortName', null, $fullName );
 print Xml::element( 'Description', null, $fullName );
 
 // By default we'll use the site favicon.
 // Double-check if IE supports this properly?
 print Xml::element( 'Image',
-	array(
+	[
 		'height' => 16,
 		'width' => 16,
-		'type' => 'image/x-icon' ),
-	wfExpandUrl( $wgFavicon ) );
+		'type' => 'image/x-icon' ],
+	wfExpandUrl( $wgFavicon, PROTO_CURRENT ) );
 
-$urls = array();
+$urls = [];
 
 // General search template. Given an input term, this should bring up
 // search results or a specific found page.
 // At least Firefox and IE 7 support this.
 $searchPage = SpecialPage::getTitleFor( 'Search' );
-$urls[] = array(
+$urls[] = [
 	'type' => 'text/html',
 	'method' => 'get',
-	'template' => $searchPage->getFullURL( 'search={searchTerms}' ) );
+	'template' => $searchPage->getCanonicalURL( 'search={searchTerms}' ) ];
 
-if( $wgEnableAPI ) {
-	// JSON interface for search suggestions.
-	// Supported in Firefox 2 and later.
-	$urls[] = array(
-		'type' => 'application/x-suggestions+json',
-		'method' => 'get',
-		'template' => SearchEngine::getOpenSearchTemplate() );
+foreach ( $wgOpenSearchTemplates as $type => $template ) {
+	if ( !$template && $wgEnableAPI ) {
+		$template = ApiOpenSearch::getOpenSearchTemplate( $type );
+	}
+
+	if ( $template ) {
+		$urls[] = [
+			'type' => $type,
+			'method' => 'get',
+			'template' => $template,
+		];
+	}
 }
 
 // Allow hooks to override the suggestion URL settings in a more
 // general way than overriding the whole search engine...
-wfRunHooks( 'OpenSearchUrls', array( &$urls ) );
+Hooks::run( 'OpenSearchUrls', [ &$urls ] );
 
-foreach( $urls as $attribs ) {
+foreach ( $urls as $attribs ) {
 	print Xml::element( 'Url', $attribs );
 }
 
@@ -86,6 +111,6 @@ foreach( $urls as $attribs ) {
 // sends you to the domain root if you hit "enter" with an empty
 // search box.
 print Xml::element( 'moz:SearchForm', null,
-	$searchPage->getFullUrl() );
+	$searchPage->getCanonicalURL() );
 
 print '</OpenSearchDescription>';

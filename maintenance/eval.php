@@ -1,6 +1,5 @@
 <?php
 /**
- * PHP lacks an interactive mode, but this can be very helpful when debugging.
  * This script lets a command-line user start up the wiki engine and then poke
  * about by issuing PHP commands directly.
  *
@@ -31,61 +30,64 @@
  * @ingroup Maintenance
  */
 
-$wgUseNormalUser = (bool)getenv( 'MW_WIKIUSER' );
+use MediaWiki\Logger\LoggerFactory;
+use MediaWiki\Logger\ConsoleSpi;
+use MediaWiki\MediaWikiServices;
 
-$optionsWithArgs = array( 'd' );
+$optionsWithArgs = [ 'd' ];
 
-/** */
-require_once( "commandLine.inc" );
+require_once __DIR__ . "/commandLine.inc";
 
 if ( isset( $options['d'] ) ) {
 	$d = $options['d'];
 	if ( $d > 0 ) {
-		$wgDebugLogFile = '/dev/stdout';
+		LoggerFactory::registerProvider( new ConsoleSpi );
+		// Some services hold Logger instances in object properties
+		MediaWikiServices::resetGlobalInstance();
 	}
 	if ( $d > 1 ) {
-		$lb = wfGetLB();
-		$serverCount = $lb->getServerCount(); 
-		for ( $i = 0; $i < $serverCount; $i++ ) {
-			$server = $lb->getServerInfo( $i );
-			$server['flags'] |= DBO_DEBUG;
-			$lb->setServerInfo( $i, $server );
-		}
-	}
-	if ( $d > 2 ) {
-		$wgDebugFunctionEntry = true;
+		wfGetDB( DB_MASTER )->setFlag( DBO_DEBUG );
+		wfGetDB( DB_REPLICA )->setFlag( DBO_DEBUG );
 	}
 }
 
-if ( function_exists( 'readline_add_history' )
-	&& posix_isatty( 0 /*STDIN*/ ) )
-{
-	$useReadline = true;
-} else {
-	$useReadline = false;
-}
+$__useReadline = function_exists( 'readline_add_history' )
+	&& Maintenance::posix_isatty( 0 /*STDIN*/ );
 
-if ( $useReadline ) {
-	$historyFile = isset( $_ENV['HOME'] ) ?
+if ( $__useReadline ) {
+	$__historyFile = isset( $_ENV['HOME'] ) ?
 		"{$_ENV['HOME']}/.mweval_history" : "$IP/maintenance/.mweval_history";
-	readline_read_history( $historyFile );
+	readline_read_history( $__historyFile );
 }
 
-while ( ( $line = Maintenance::readconsole() ) !== false ) {
-	if ( $useReadline ) {
-		readline_add_history( $line );
-		readline_write_history( $historyFile );
+$__e = null; // PHP exception
+while ( ( $__line = Maintenance::readconsole() ) !== false ) {
+	if ( $__e && !preg_match( '/^(exit|die);?$/', $__line ) ) {
+		// Internal state may be corrupted or fatals may occur later due
+		// to some object not being set. Don't drop out of eval in case
+		// lines were being pasted in (which would then get dumped to the shell).
+		// Instead, just absorb the remaning commands. Let "exit" through per DWIM.
+		echo "Exception was thrown before; please restart eval.php\n";
+		continue;
 	}
-	$val = eval( $line . ";" );
-	if ( wfIsHipHop() || is_null( $val ) ) {
+	if ( $__useReadline ) {
+		readline_add_history( $__line );
+		readline_write_history( $__historyFile );
+	}
+	try {
+		$__val = eval( $__line . ";" );
+	} catch ( Exception $__e ) {
+		echo "Caught exception " . get_class( $__e ) .
+			": {$__e->getMessage()}\n" . $__e->getTraceAsString() . "\n";
+		continue;
+	}
+	if ( wfIsHHVM() || is_null( $__val ) ) {
 		echo "\n";
-	} elseif ( is_string( $val ) || is_numeric( $val ) ) {
-		echo "$val\n";
+	} elseif ( is_string( $__val ) || is_numeric( $__val ) ) {
+		echo "$__val\n";
 	} else {
-		var_dump( $val );
+		var_dump( $__val );
 	}
 }
 
 print "\n";
-
-

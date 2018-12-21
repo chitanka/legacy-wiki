@@ -1,12 +1,6 @@
 <?php
 
 /**
- * API for MediaWiki 1.14+
- *
- * Created on Sep 2, 2008
- *
- * Copyright © 2008 Chad Horohoe
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -24,123 +18,160 @@
  *
  * @file
  */
-
-if ( !defined( 'MEDIAWIKI' ) ) {
-	require_once( 'ApiBase.php' );
-}
+use MediaWiki\Logger\LoggerFactory;
+use MediaWiki\MediaWikiServices;
 
 /**
  * API interface for page purging
  * @ingroup API
  */
 class ApiPurge extends ApiBase {
-
-	public function __construct( $main, $action ) {
-		parent::__construct( $main, $action );
-	}
+	private $mPageSet = null;
 
 	/**
 	 * Purges the cache of a page
 	 */
 	public function execute() {
-		global $wgUser;
 		$params = $this->extractRequestParams();
-		if ( !$wgUser->isAllowed( 'purge' ) && !$this->getMain()->isInternalMode() &&
-				!$this->getMain()->getRequest()->wasPosted() ) {
-			$this->dieUsageMsg( array( 'mustbeposted', $this->getModuleName() ) );
-		}
+
+		$continuationManager = new ApiContinuationManager( $this, [], [] );
+		$this->setContinuationManager( $continuationManager );
 
 		$forceLinkUpdate = $params['forcelinkupdate'];
+		$forceRecursiveLinkUpdate = $params['forcerecursivelinkupdate'];
+		$pageSet = $this->getPageSet();
+		$pageSet->execute();
 
-		$result = array();
-		foreach ( $params['titles'] as $t ) {
-			$r = array();
-			$title = Title::newFromText( $t );
-			if ( !$title instanceof Title ) {
-				$r['title'] = $t;
-				$r['invalid'] = '';
-				$result[] = $r;
-				continue;
-			}
+		$result = $pageSet->getInvalidTitlesAndRevisions();
+		$user = $this->getUser();
+
+		foreach ( $pageSet->getGoodTitles() as $title ) {
+			$r = [];
 			ApiQueryBase::addTitleInfo( $r, $title );
-			if ( !$title->exists() ) {
-				$r['missing'] = '';
-				$result[] = $r;
-				continue;
+			$page = WikiPage::factory( $title );
+			if ( !$user->pingLimiter( 'purge' ) ) {
+				// Directly purge and skip the UI part of purge()
+				$page->doPurge();
+				$r['purged'] = true;
+			} else {
+				$this->addWarning( 'apierror-ratelimited' );
 			}
-			$context = RequestContext::getMain();
-			$article = MediaWiki::articleFromTitle( $title, $context );
-			$article->doPurge(); // Directly purge and skip the UI part of purge().
-			$r['purged'] = '';
-			
-			if( $forceLinkUpdate ) {
-				if ( !$wgUser->pingLimiter() ) {
-					global $wgParser, $wgEnableParserCache;
-					$popts = new ParserOptions();
-					$p_result = $wgParser->parse( $article->getContent(), $title, $popts );
 
-					# Update the links tables
-					$u = new LinksUpdate( $title, $p_result );
-					$u->doUpdate();
+			if ( $forceLinkUpdate || $forceRecursiveLinkUpdate ) {
+				if ( !$user->pingLimiter( 'linkpurge' ) ) {
+					$popts = $page->makeParserOptions( 'canonical' );
 
-					$r['linkupdate'] = '';
+					# Parse content; note that HTML generation is only needed if we want to cache the result.
+					$content = $page->getContent( Revision::RAW );
+					if ( $content ) {
+						$enableParserCache = $this->getConfig()->get( 'EnableParserCache' );
+						$p_result = $content->getParserOutput(
+							$title,
+							$page->getLatest(),
+							$popts,
+							$enableParserCache
+						);
 
-					if ( $wgEnableParserCache ) {
-						$pcache = ParserCache::singleton();
-						$pcache->save( $p_result, $article, $popts );
+						# Logging to better see expensive usage patterns
+						if ( $forceRecursiveLinkUpdate ) {
+							LoggerFactory::getInstance( 'RecursiveLinkPurge' )->info(
+								"Recursive link purge enqueued for {title}",
+								[
+									'user' => $this->getUser()->getName(),
+									'title' => $title->getPrefixedText()
+								]
+							);
+						}
+
+						# Update the links tables
+						$updates = $content->getSecondaryDataUpdates(
+							$title, null, $forceRecursiveLinkUpdate, $p_result );
+						foreach ( $updates as $update ) {
+							$update->setCause( 'api-purge', $this->getUser()->getName() );
+							DeferredUpdates::addUpdate( $update, DeferredUpdates::PRESEND );
+						}
+
+						$r['linkupdate'] = true;
+
+						if ( $enableParserCache ) {
+							$pcache = MediaWikiServices::getInstance()->getParserCache();
+							$pcache->save( $p_result, $page, $popts );
+						}
 					}
 				} else {
-					$this->setWarning( $this->parseMsg( array( 'actionthrottledtext' ) ) );
+					$this->addWarning( 'apierror-ratelimited' );
 					$forceLinkUpdate = false;
 				}
 			}
-			
+
 			$result[] = $r;
 		}
-		$this->getResult()->setIndexedTagName( $result, 'page' );
-		$this->getResult()->addValue( null, $this->getModuleName(), $result );
+		$apiResult = $this->getResult();
+		ApiResult::setIndexedTagName( $result, 'page' );
+		$apiResult->addValue( null, $this->getModuleName(), $result );
+
+		$values = $pageSet->getNormalizedTitlesAsResult( $apiResult );
+		if ( $values ) {
+			$apiResult->addValue( null, 'normalized', $values );
+		}
+		$values = $pageSet->getConvertedTitlesAsResult( $apiResult );
+		if ( $values ) {
+			$apiResult->addValue( null, 'converted', $values );
+		}
+		$values = $pageSet->getRedirectTitlesAsResult( $apiResult );
+		if ( $values ) {
+			$apiResult->addValue( null, 'redirects', $values );
+		}
+
+		$this->setContinuationManager( null );
+		$continuationManager->setContinuationIntoResult( $apiResult );
+	}
+
+	/**
+	 * Get a cached instance of an ApiPageSet object
+	 * @return ApiPageSet
+	 */
+	private function getPageSet() {
+		if ( $this->mPageSet === null ) {
+			$this->mPageSet = new ApiPageSet( $this );
+		}
+
+		return $this->mPageSet;
 	}
 
 	public function isWriteMode() {
 		return true;
 	}
 
-	public function getAllowedParams() {
-		return array(
-			'titles' => array(
-				ApiBase::PARAM_ISMULTI => true,
-				ApiBase::PARAM_REQUIRED => true
-			),
+	public function mustBePosted() {
+		return true;
+	}
+
+	public function getAllowedParams( $flags = 0 ) {
+		$result = [
 			'forcelinkupdate' => false,
-		);
+			'forcerecursivelinkupdate' => false,
+			'continue' => [
+				ApiBase::PARAM_HELP_MSG => 'api-help-param-continue',
+			],
+		];
+		if ( $flags ) {
+			$result += $this->getPageSet()->getFinalParams( $flags );
+		}
+
+		return $result;
 	}
 
-	public function getParamDescription() {
-		return array(
-			'titles' => 'A list of titles',
-			'forcelinkupdate' => 'Update the links tables',
-		);
+	protected function getExamplesMessages() {
+		return [
+			'action=purge&titles=Main_Page|API'
+				=> 'apihelp-purge-example-simple',
+			'action=purge&generator=allpages&gapnamespace=0&gaplimit=10'
+				=> 'apihelp-purge-example-generator',
+		];
 	}
 
-	public function getDescription() {
-		return array( 'Purge the cache for the given titles.',
-			'Requires a POST request if the user is not logged in.'
-		);
-	}
-
-	public function getPossibleErrors() {
-		return array_merge( parent::getPossibleErrors(), array(
-			array( 'cantpurge' ),
-		) );
-	}
-
-	protected function getExamples() {
-		return array(
-			'api.php?action=purge&titles=Main_Page|API'
-		);
-	}
-
-	public function getVersion() {
-		return __CLASS__ . ': $Id: ApiPurge.php 87641 2011-05-07 15:28:55Z happy-melon $';
+	public function getHelpUrls() {
+		return 'https://www.mediawiki.org/wiki/Special:MyLanguage/API:Purge';
 	}
 }

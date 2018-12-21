@@ -1,5 +1,7 @@
 <?php
 /**
+ * Implements Special:Unblock
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -30,100 +32,101 @@ class SpecialUnblock extends SpecialPage {
 	protected $type;
 	protected $block;
 
-	public function __construct(){
+	public function __construct() {
 		parent::__construct( 'Unblock', 'block' );
 	}
 
-	public function execute( $par ){
-		global $wgUser, $wgOut, $wgRequest;
+	public function doesWrites() {
+		return true;
+	}
 
-		# Check permissions
-		if( !$wgUser->isAllowed( 'block' ) ) {
-			$wgOut->permissionRequired( 'block' );
-			return;
-		}
-		# Check for database lock
-		if( wfReadOnly() ) {
-			$wgOut->readOnlyPage();
-			return;
-		}
+	public function execute( $par ) {
+		$this->checkPermissions();
+		$this->checkReadOnly();
 
-		list( $this->target, $this->type ) = SpecialBlock::getTargetAndType( $par, $wgRequest );
+		list( $this->target, $this->type ) = SpecialBlock::getTargetAndType( $par, $this->getRequest() );
 		$this->block = Block::newFromTarget( $this->target );
-
-		# bug 15810: blocked admins should have limited access here.  This won't allow sysops
-		# to remove autoblocks on themselves, but they should have ipblock-exempt anyway
-		$status = SpecialBlock::checkUnblockSelf( $this->target );
-		if ( $status !== true ) {
-			throw new ErrorPageError( 'badaccess', $status );
+		if ( $this->target instanceof User ) {
+			# Set the 'relevant user' in the skin, so it displays links like Contributions,
+			# User logs, UserRights, etc.
+			$this->getSkin()->setRelevantUser( $this->target );
 		}
 
-		$wgOut->setPageTitle( wfMsg( 'unblockip' ) );
-		$wgOut->addModules( 'mediawiki.special' );
+		$this->setHeaders();
+		$this->outputHeader();
 
-		$form = new HTMLForm( $this->getFields(), $this->getContext() );
-		$form->setWrapperLegend( wfMsg( 'unblockip' ) );
-		$form->setSubmitCallback( array( __CLASS__, 'processUnblock' ) );
-		$form->setSubmitText( wfMsg( 'ipusubmit' ) );
-		$form->addPreText( wfMsgExt( 'unblockiptext', 'parse' ) );
+		$out = $this->getOutput();
+		$out->setPageTitle( $this->msg( 'unblockip' ) );
+		$out->addModules( [ 'mediawiki.userSuggest' ] );
 
-		if( $form->show() ){
-			switch( $this->type ){
-				case Block::TYPE_USER:
+		$form = HTMLForm::factory( 'ooui', $this->getFields(), $this->getContext() );
+		$form->setWrapperLegendMsg( 'unblockip' );
+		$form->setSubmitCallback( [ __CLASS__, 'processUIUnblock' ] );
+		$form->setSubmitTextMsg( 'ipusubmit' );
+		$form->addPreText( $this->msg( 'unblockiptext' )->parseAsBlock() );
+
+		if ( $form->show() ) {
+			switch ( $this->type ) {
 				case Block::TYPE_IP:
-					$wgOut->addWikiMsg( 'unblocked',  $this->target );
+					$out->addWikiMsg( 'unblocked-ip', wfEscapeWikiText( $this->target ) );
+					break;
+				case Block::TYPE_USER:
+					$out->addWikiMsg( 'unblocked', wfEscapeWikiText( $this->target ) );
 					break;
 				case Block::TYPE_RANGE:
-					$wgOut->addWikiMsg( 'unblocked-range', $this->target );
+					$out->addWikiMsg( 'unblocked-range', wfEscapeWikiText( $this->target ) );
 					break;
 				case Block::TYPE_ID:
 				case Block::TYPE_AUTO:
-					$wgOut->addWikiMsg( 'unblocked-id', $this->target );
+					$out->addWikiMsg( 'unblocked-id', wfEscapeWikiText( $this->target ) );
 					break;
 			}
 		}
 	}
 
-	protected function getFields(){
-		$fields = array(
-			'Target' => array(
+	protected function getFields() {
+		$fields = [
+			'Target' => [
 				'type' => 'text',
-				'label-message' => 'ipadressorusername',
-				'tabindex' => '1',
+				'label-message' => 'ipaddressorusername',
+				'autofocus' => true,
 				'size' => '45',
 				'required' => true,
-			),
-			'Name' => array(
+				'cssclass' => 'mw-autocomplete-user', // used by mediawiki.userSuggest
+			],
+			'Name' => [
 				'type' => 'info',
-				'label-message' => 'ipadressorusername',
-			),
-			'Reason' => array(
+				'label-message' => 'ipaddressorusername',
+			],
+			'Reason' => [
 				'type' => 'text',
 				'label-message' => 'ipbreason',
-			)
-		);
+			]
+		];
 
-		if( $this->block instanceof Block ){
+		if ( $this->block instanceof Block ) {
 			list( $target, $type ) = $this->block->getTargetAndType();
 
 			# Autoblocks are logged as "autoblock #123 because the IP was recently used by
 			# User:Foo, and we've just got any block, auto or not, that applies to a target
 			# the user has specified.  Someone could be fishing to connect IPs to autoblocks,
 			# so don't show any distinction between unblocked IPs and autoblocked IPs
-			if( $type == Block::TYPE_AUTO && $this->type == Block::TYPE_IP ){
+			if ( $type == Block::TYPE_AUTO && $this->type == Block::TYPE_IP ) {
 				$fields['Target']['default'] = $this->target;
 				unset( $fields['Name'] );
-
 			} else {
-				global $wgUser;
-
 				$fields['Target']['default'] = $target;
 				$fields['Target']['type'] = 'hidden';
-				switch( $type ){
-					case Block::TYPE_USER:
+				switch ( $type ) {
 					case Block::TYPE_IP:
-						$skin = $wgUser->getSkin();
-						$fields['Name']['default'] = $skin->link(
+						$fields['Name']['default'] = $this->getLinkRenderer()->makeKnownLink(
+							SpecialPage::getTitleFor( 'Contributions', $target->getName() ),
+							$target->getName()
+						);
+						$fields['Name']['raw'] = true;
+						break;
+					case Block::TYPE_USER:
+						$fields['Name']['default'] = $this->getLinkRenderer()->makeLink(
 							$target->getUserPage(),
 							$target->getName()
 						);
@@ -141,65 +144,135 @@ class SpecialUnblock extends SpecialPage {
 						$fields['Target']['default'] = "#{$this->target}";
 						break;
 				}
+				// target is hidden, so the reason is the first element
+				$fields['Target']['autofocus'] = false;
+				$fields['Reason']['autofocus'] = true;
 			}
-
 		} else {
 			$fields['Target']['default'] = $this->target;
 			unset( $fields['Name'] );
 		}
+
 		return $fields;
 	}
 
 	/**
-	 * Process the form
-	 * @return Array( Array(message key, parameters) ) on failure, True on success
+	 * Submit callback for an HTMLForm object
+	 * @param array $data
+	 * @param HTMLForm $form
+	 * @return array|bool Array(message key, parameters)
 	 */
-	public static function processUnblock( array $data ){
-		global $wgUser;
+	public static function processUIUnblock( array $data, HTMLForm $form ) {
+		return self::processUnblock( $data, $form->getContext() );
+	}
 
+	/**
+	 * Process the form
+	 *
+	 * Change tags can be provided via $data['Tags'], but the calling function
+	 * must check if the tags can be added by the user prior to this function.
+	 *
+	 * @param array $data
+	 * @param IContextSource $context
+	 * @throws ErrorPageError
+	 * @return array|bool Array( Array( message key, parameters ) ) on failure, True on success
+	 */
+	public static function processUnblock( array $data, IContextSource $context ) {
+		$performer = $context->getUser();
 		$target = $data['Target'];
 		$block = Block::newFromTarget( $data['Target'] );
 
-		if( !$block instanceof Block ){
-			return array( array( 'ipb_cant_unblock', $target ) );
+		if ( !$block instanceof Block ) {
+			return [ [ 'ipb_cant_unblock', $target ] ];
+		}
+
+		# T17810: blocked admins should have limited access here.  This
+		# won't allow sysops to remove autoblocks on themselves, but they
+		# should have ipblock-exempt anyway
+		$status = SpecialBlock::checkUnblockSelf( $target, $performer );
+		if ( $status !== true ) {
+			throw new ErrorPageError( 'badaccess', $status );
 		}
 
 		# If the specified IP is a single address, and the block is a range block, don't
 		# unblock the whole range.
 		list( $target, $type ) = SpecialBlock::getTargetAndType( $target );
-		if( $block->getType() == Block::TYPE_RANGE && $type == Block::TYPE_IP ) {
-			 $range = $block->getTarget();
-			 return array( array( 'ipb_blocked_as_range', $target, $range ) );
+		if ( $block->getType() == Block::TYPE_RANGE && $type == Block::TYPE_IP ) {
+			$range = $block->getTarget();
+
+			return [ [ 'ipb_blocked_as_range', $target, $range ] ];
 		}
 
 		# If the name was hidden and the blocking user cannot hide
 		# names, then don't allow any block removals...
-		if( !$wgUser->isAllowed( 'hideuser' ) && $block->mHideName ) {
-			return array( 'unblock-hideuser' );
+		if ( !$performer->isAllowed( 'hideuser' ) && $block->mHideName ) {
+			return [ 'unblock-hideuser' ];
+		}
+
+		$reason = [ 'hookaborted' ];
+		if ( !Hooks::run( 'UnblockUser', [ &$block, &$performer, &$reason ] ) ) {
+			return $reason;
 		}
 
 		# Delete block
 		if ( !$block->delete() ) {
-			return array( 'ipb_cant_unblock', htmlspecialchars( $block->getTarget() ) );
+			return [ [ 'ipb_cant_unblock', htmlspecialchars( $block->getTarget() ) ] ];
 		}
 
+		Hooks::run( 'UnblockUserComplete', [ $block, $performer ] );
+
 		# Unset _deleted fields as needed
-		if( $block->mHideName ) {
+		if ( $block->mHideName ) {
 			# Something is deeply FUBAR if this is not a User object, but who knows?
 			$id = $block->getTarget() instanceof User
-				? $block->getTarget()->getID()
+				? $block->getTarget()->getId()
 				: User::idFromName( $block->getTarget() );
 
 			RevisionDeleteUser::unsuppressUserName( $block->getTarget(), $id );
 		}
 
+		# Redact the name (IP address) for autoblocks
+		if ( $block->getType() == Block::TYPE_AUTO ) {
+			$page = Title::makeTitle( NS_USER, '#' . $block->getId() );
+		} else {
+			$page = $block->getTarget() instanceof User
+				? $block->getTarget()->getUserPage()
+				: Title::makeTitle( NS_USER, $block->getTarget() );
+		}
+
 		# Make log entry
-		$log = new LogPage( 'block' );
-		$page = $block->getTarget() instanceof User
-			? $block->getTarget()->getUserpage()
-			: Title::makeTitle( NS_USER, $block->getTarget() );
-		$log->addEntry( 'unblock', $page, $data['Reason'] );
+		$logEntry = new ManualLogEntry( 'block', 'unblock' );
+		$logEntry->setTarget( $page );
+		$logEntry->setComment( $data['Reason'] );
+		$logEntry->setPerformer( $performer );
+		if ( isset( $data['Tags'] ) ) {
+			$logEntry->setTags( $data['Tags'] );
+		}
+		$logId = $logEntry->insert();
+		$logEntry->publish( $logId );
 
 		return true;
+	}
+
+	/**
+	 * Return an array of subpages beginning with $search that this special page will accept.
+	 *
+	 * @param string $search Prefix to search for
+	 * @param int $limit Maximum number of results to return (usually 10)
+	 * @param int $offset Number of results to skip (usually 0)
+	 * @return string[] Matching subpages
+	 */
+	public function prefixSearchSubpages( $search, $limit, $offset ) {
+		$user = User::newFromName( $search );
+		if ( !$user ) {
+			// No prefix suggestion for invalid user
+			return [];
+		}
+		// Autocomplete subpage as user list - public to allow caching
+		return UserNamePrefixSearch::search( 'public', $search, $limit, $offset );
+	}
+
+	protected function getGroupName() {
+		return 'users';
 	}
 }

@@ -21,208 +21,664 @@
  * @ingroup SpecialPage
  */
 
+use MediaWiki\MediaWikiServices;
+use Wikimedia\Rdbms\IResultWrapper;
+use Wikimedia\Rdbms\FakeResultWrapper;
+
 /**
  * A special page that lists last changes made to the wiki
  *
  * @ingroup SpecialPage
  */
-class SpecialRecentChanges extends IncludableSpecialPage {
-	var $rcOptions, $rcSubpage;
+class SpecialRecentChanges extends ChangesListSpecialPage {
 
-	public function __construct( $name = 'Recentchanges' ) {
-		parent::__construct( $name );
+	protected static $savedQueriesPreferenceName = 'rcfilters-saved-queries';
+	protected static $daysPreferenceName = 'rcdays'; // Use general RecentChanges preference
+	protected static $limitPreferenceName = 'rcfilters-limit'; // Use RCFilters-specific preference
+
+	private $watchlistFilterGroupDefinition;
+
+	public function __construct( $name = 'Recentchanges', $restriction = '' ) {
+		parent::__construct( $name, $restriction );
+
+		$this->watchlistFilterGroupDefinition = [
+			'name' => 'watchlist',
+			'title' => 'rcfilters-filtergroup-watchlist',
+			'class' => ChangesListStringOptionsFilterGroup::class,
+			'priority' => -9,
+			'isFullCoverage' => true,
+			'filters' => [
+				[
+					'name' => 'watched',
+					'label' => 'rcfilters-filter-watchlist-watched-label',
+					'description' => 'rcfilters-filter-watchlist-watched-description',
+					'cssClassSuffix' => 'watched',
+					'isRowApplicableCallable' => function ( $ctx, $rc ) {
+						return $rc->getAttribute( 'wl_user' );
+					}
+				],
+				[
+					'name' => 'watchednew',
+					'label' => 'rcfilters-filter-watchlist-watchednew-label',
+					'description' => 'rcfilters-filter-watchlist-watchednew-description',
+					'cssClassSuffix' => 'watchednew',
+					'isRowApplicableCallable' => function ( $ctx, $rc ) {
+						return $rc->getAttribute( 'wl_user' ) &&
+							$rc->getAttribute( 'rc_timestamp' ) &&
+							$rc->getAttribute( 'wl_notificationtimestamp' ) &&
+							$rc->getAttribute( 'rc_timestamp' ) >= $rc->getAttribute( 'wl_notificationtimestamp' );
+					},
+				],
+				[
+					'name' => 'notwatched',
+					'label' => 'rcfilters-filter-watchlist-notwatched-label',
+					'description' => 'rcfilters-filter-watchlist-notwatched-description',
+					'cssClassSuffix' => 'notwatched',
+					'isRowApplicableCallable' => function ( $ctx, $rc ) {
+						return $rc->getAttribute( 'wl_user' ) === null;
+					},
+				]
+			],
+			'default' => ChangesListStringOptionsFilterGroup::NONE,
+			'queryCallable' => function ( $specialPageClassName, $context, $dbr,
+				&$tables, &$fields, &$conds, &$query_options, &$join_conds, $selectedValues ) {
+				sort( $selectedValues );
+				$notwatchedCond = 'wl_user IS NULL';
+				$watchedCond = 'wl_user IS NOT NULL';
+				$newCond = 'rc_timestamp >= wl_notificationtimestamp';
+
+				if ( $selectedValues === [ 'notwatched' ] ) {
+					$conds[] = $notwatchedCond;
+					return;
+				}
+
+				if ( $selectedValues === [ 'watched' ] ) {
+					$conds[] = $watchedCond;
+					return;
+				}
+
+				if ( $selectedValues === [ 'watchednew' ] ) {
+					$conds[] = $dbr->makeList( [
+						$watchedCond,
+						$newCond
+					], LIST_AND );
+					return;
+				}
+
+				if ( $selectedValues === [ 'notwatched', 'watched' ] ) {
+					// no filters
+					return;
+				}
+
+				if ( $selectedValues === [ 'notwatched', 'watchednew' ] ) {
+					$conds[] = $dbr->makeList( [
+						$notwatchedCond,
+						$dbr->makeList( [
+							$watchedCond,
+							$newCond
+						], LIST_AND )
+					], LIST_OR );
+					return;
+				}
+
+				if ( $selectedValues === [ 'watched', 'watchednew' ] ) {
+					$conds[] = $watchedCond;
+					return;
+				}
+
+				if ( $selectedValues === [ 'notwatched', 'watched', 'watchednew' ] ) {
+					// no filters
+					return;
+				}
+			}
+		];
 	}
-
-	/**
-	 * Get a FormOptions object containing the default options
-	 *
-	 * @return FormOptions
-	 */
-	public function getDefaultOptions() {
-		$opts = new FormOptions();
-
-		$opts->add( 'days',  (int)$this->getUser()->getOption( 'rcdays' ) );
-		$opts->add( 'limit', (int)$this->getUser()->getOption( 'rclimit' ) );
-		$opts->add( 'from', '' );
-
-		$opts->add( 'hideminor',     $this->getUser()->getBoolOption( 'hideminor' ) );
-		$opts->add( 'hidebots',      true  );
-		$opts->add( 'hideanons',     false );
-		$opts->add( 'hideliu',       false );
-		$opts->add( 'hidepatrolled', $this->getUser()->getBoolOption( 'hidepatrolled' ) );
-		$opts->add( 'hidemyself',    false );
-
-		$opts->add( 'namespace', '', FormOptions::INTNULL );
-		$opts->add( 'invert', false );
-		$opts->add( 'associated', false );
-
-		$opts->add( 'categories', '' );
-		$opts->add( 'categories_any', false );
-		$opts->add( 'tagfilter', '' );
-		return $opts;
-	}
-
-	/**
-	 * Create a FormOptions object with options as specified by the user
-	 *
-	 * @return FormOptions
-	 */
-	public function setup( $parameters ) {
-		global $wgRequest, $wgRCMaxAge;
-
-		$opts = $this->getDefaultOptions();
-		$opts->fetchValuesFromRequest( $wgRequest );
-		$opts->validateIntBounds( 'days', 1, $wgRCMaxAge / ( 3600 * 24 ) );
-
-		// Give precedence to subpage syntax
-		if( $parameters !== null ) {
-			$this->parseParameters( $parameters, $opts );
-		}
-
-		$opts->validateIntBounds( 'limit', 0, 5000 );
-		return $opts;
-	}
-
-	/**
-	 * Create a FormOptions object specific for feed requests and return it
-	 *
-	 * @return FormOptions
-	 */
-	public function feedSetup() {
-		global $wgFeedLimit, $wgRequest;
-		$opts = $this->getDefaultOptions();
-		# Feed is cached on limit,hideminor,namespace; other params would randomly not work
-		$opts->fetchValuesFromRequest( $wgRequest, array( 'limit', 'hideminor', 'namespace' ) );
-		$opts->validateIntBounds( 'limit', 0, $wgFeedLimit );
-		return $opts;
-	}
-
-	/**
-	 * Get the current FormOptions for this request
-	 */
-	public function getOptions() {
-		if ( $this->rcOptions === null ) {
-			global $wgRequest;
-			$feedFormat = $wgRequest->getVal( 'feed' );
-			$this->rcOptions = $feedFormat ? $this->feedSetup() : $this->setup( $this->rcSubpage );
-		}
-		return $this->rcOptions;
-	}
-
 
 	/**
 	 * Main execution point
 	 *
-	 * @param $subpage String
+	 * @param string $subpage
 	 */
 	public function execute( $subpage ) {
-		global $wgRequest, $wgOut;
-		$this->rcSubpage = $subpage;
-		$feedFormat = $wgRequest->getVal( 'feed' );
+		// Backwards-compatibility: redirect to new feed URLs
+		$feedFormat = $this->getRequest()->getVal( 'feed' );
+		if ( !$this->including() && $feedFormat ) {
+			$query = $this->getFeedQuery();
+			$query['feedformat'] = $feedFormat === 'atom' ? 'atom' : 'rss';
+			$this->getOutput()->redirect( wfAppendQuery( wfScript( 'api' ), $query ) );
 
-		# 10 seconds server-side caching max
-		$wgOut->setSquidMaxage( 10 );
-		# Check if the client has a cached version
-		$lastmod = $this->checkLastModified( $feedFormat );
-		if( $lastmod === false ) {
 			return;
 		}
 
-		$opts = $this->getOptions();
-		$this->setHeaders();
-		$this->outputHeader();
-
-		// Fetch results, prepare a batch link existence check query
-		$conds = $this->buildMainQueryConds( $opts );
-		$rows = $this->doMainQuery( $conds, $opts );
-		if( $rows === false ){
-			if( !$this->including() ) {
-				$this->doHeader( $opts );
-			}
+		// 10 seconds server-side caching max
+		$out = $this->getOutput();
+		$out->setCdnMaxage( 10 );
+		// Check if the client has a cached version
+		$lastmod = $this->checkLastModified();
+		if ( $lastmod === false ) {
 			return;
 		}
 
-		if( !$feedFormat ) {
-			$batch = new LinkBatch;
-			foreach( $rows as $row ) {
-				$batch->add( NS_USER, $row->rc_user_text );
-				$batch->add( NS_USER_TALK, $row->rc_user_text );
-				$batch->add( $row->rc_namespace, $row->rc_title );
-			}
-			$batch->execute();
-		}
-		if( $feedFormat ) {
-			list( $changesFeed, $formatter ) = $this->getFeedObject( $feedFormat );
-			$changesFeed->execute( $formatter, $rows, $lastmod, $opts );
-		} else {
-			$this->webOutput( $rows, $opts );
-		}
-
-		$rows->free();
-	}
-
-	/**
-	 * Return an array with a ChangesFeed object and ChannelFeed object
-	 *
-	 * @return Array
-	 */
-	public function getFeedObject( $feedFormat ){
-		$changesFeed = new ChangesFeed( $feedFormat, 'rcfeed' );
-		$formatter = $changesFeed->getFeedObject(
-			wfMsgForContent( 'recentchanges' ),
-			wfMsgForContent( 'recentchanges-feed-description' ),
-			$this->getTitle()->getFullURL()
+		$this->addHelpLink(
+			'//meta.wikimedia.org/wiki/Special:MyLanguage/Help:Recent_changes',
+			true
 		);
-		return array( $changesFeed, $formatter );
+		parent::execute( $subpage );
 	}
 
 	/**
-	 * Process $par and put options found if $opts
-	 * Mainly used when including the page
+	 * @inheritDoc
+	 */
+	protected function transformFilterDefinition( array $filterDefinition ) {
+		if ( isset( $filterDefinition['showHideSuffix'] ) ) {
+			$filterDefinition['showHide'] = 'rc' . $filterDefinition['showHideSuffix'];
+		}
+
+		return $filterDefinition;
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	protected function registerFilters() {
+		parent::registerFilters();
+
+		if (
+			!$this->including() &&
+			$this->getUser()->isLoggedIn() &&
+			$this->getUser()->isAllowed( 'viewmywatchlist' )
+		) {
+			$this->registerFiltersFromDefinitions( [ $this->watchlistFilterGroupDefinition ] );
+			$watchlistGroup = $this->getFilterGroup( 'watchlist' );
+			$watchlistGroup->getFilter( 'watched' )->setAsSupersetOf(
+				$watchlistGroup->getFilter( 'watchednew' )
+			);
+		}
+
+		$user = $this->getUser();
+
+		$significance = $this->getFilterGroup( 'significance' );
+		$hideMinor = $significance->getFilter( 'hideminor' );
+		$hideMinor->setDefault( $user->getBoolOption( 'hideminor' ) );
+
+		$automated = $this->getFilterGroup( 'automated' );
+		$hideBots = $automated->getFilter( 'hidebots' );
+		$hideBots->setDefault( true );
+
+		$reviewStatus = $this->getFilterGroup( 'reviewStatus' );
+		if ( $reviewStatus !== null ) {
+			// Conditional on feature being available and rights
+			if ( $user->getBoolOption( 'hidepatrolled' ) ) {
+				$reviewStatus->setDefault( 'unpatrolled' );
+				$legacyReviewStatus = $this->getFilterGroup( 'legacyReviewStatus' );
+				$legacyHidePatrolled = $legacyReviewStatus->getFilter( 'hidepatrolled' );
+				$legacyHidePatrolled->setDefault( true );
+			}
+		}
+
+		$changeType = $this->getFilterGroup( 'changeType' );
+		$hideCategorization = $changeType->getFilter( 'hidecategorization' );
+		if ( $hideCategorization !== null ) {
+			// Conditional on feature being available
+			$hideCategorization->setDefault( $user->getBoolOption( 'hidecategorization' ) );
+		}
+	}
+
+	/**
+	 * Get all custom filters
 	 *
-	 * @param $par String
-	 * @param $opts FormOptions
+	 * @return array Map of filter URL param names to properties (msg/default)
+	 */
+	protected function getCustomFilters() {
+		if ( $this->customFilters === null ) {
+			$this->customFilters = parent::getCustomFilters();
+			Hooks::run( 'SpecialRecentChangesFilters', [ $this, &$this->customFilters ], '1.23' );
+		}
+
+		return $this->customFilters;
+	}
+
+	/**
+	 * Process $par and put options found in $opts. Used when including the page.
+	 *
+	 * @param string $par
+	 * @param FormOptions $opts
 	 */
 	public function parseParameters( $par, FormOptions $opts ) {
+		parent::parseParameters( $par, $opts );
+
 		$bits = preg_split( '/\s*,\s*/', trim( $par ) );
-		foreach( $bits as $bit ) {
-			if( 'hidebots' === $bit ) {
-				$opts['hidebots'] = true;
-			}
-			if( 'bots' === $bit ) {
-				$opts['hidebots'] = false;
-			}
-			if( 'hideminor' === $bit ) {
-				$opts['hideminor'] = true;
-			}
-			if( 'minor' === $bit ) {
-				$opts['hideminor'] = false;
-			}
-			if( 'hideliu' === $bit ) {
-				$opts['hideliu'] = true;
-			}
-			if( 'hidepatrolled' === $bit ) {
-				$opts['hidepatrolled'] = true;
-			}
-			if( 'hideanons' === $bit ) {
-				$opts['hideanons'] = true;
-			}
-			if( 'hidemyself' === $bit ) {
-				$opts['hidemyself'] = true;
+		foreach ( $bits as $bit ) {
+			if ( is_numeric( $bit ) ) {
+				$opts['limit'] = $bit;
 			}
 
-			if( is_numeric( $bit ) ) {
-				$opts['limit'] =  $bit;
-			}
-
-			$m = array();
-			if( preg_match( '/^limit=(\d+)$/', $bit, $m ) ) {
+			$m = [];
+			if ( preg_match( '/^limit=(\d+)$/', $bit, $m ) ) {
 				$opts['limit'] = $m[1];
 			}
-			if( preg_match( '/^days=(\d+)$/', $bit, $m ) ) {
+			if ( preg_match( '/^days=(\d+(?:\.\d+)?)$/', $bit, $m ) ) {
 				$opts['days'] = $m[1];
 			}
+			if ( preg_match( '/^namespace=(.*)$/', $bit, $m ) ) {
+				$opts['namespace'] = $m[1];
+			}
+			if ( preg_match( '/^tagfilter=(.*)$/', $bit, $m ) ) {
+				$opts['tagfilter'] = $m[1];
+			}
 		}
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	protected function doMainQuery( $tables, $fields, $conds, $query_options,
+		$join_conds, FormOptions $opts
+	) {
+		$dbr = $this->getDB();
+		$user = $this->getUser();
+
+		$rcQuery = RecentChange::getQueryInfo();
+		$tables = array_merge( $tables, $rcQuery['tables'] );
+		$fields = array_merge( $rcQuery['fields'], $fields );
+		$join_conds = array_merge( $join_conds, $rcQuery['joins'] );
+
+		// JOIN on watchlist for users
+		if ( $user->isLoggedIn() && $user->isAllowed( 'viewmywatchlist' ) ) {
+			$tables[] = 'watchlist';
+			$fields[] = 'wl_user';
+			$fields[] = 'wl_notificationtimestamp';
+			$join_conds['watchlist'] = [ 'LEFT JOIN', [
+				'wl_user' => $user->getId(),
+				'wl_title=rc_title',
+				'wl_namespace=rc_namespace'
+			] ];
+		}
+
+		// JOIN on page, used for 'last revision' filter highlight
+		$tables[] = 'page';
+		$fields[] = 'page_latest';
+		$join_conds['page'] = [ 'LEFT JOIN', 'rc_cur_id=page_id' ];
+
+		$tagFilter = $opts['tagfilter'] ? explode( '|', $opts['tagfilter'] ) : [];
+		ChangeTags::modifyDisplayQuery(
+			$tables,
+			$fields,
+			$conds,
+			$join_conds,
+			$query_options,
+			$tagFilter
+		);
+
+		if ( !$this->runMainQueryHook( $tables, $fields, $conds, $query_options, $join_conds,
+			$opts )
+		) {
+			return false;
+		}
+
+		if ( $this->areFiltersInConflict() ) {
+			return false;
+		}
+
+		$orderByAndLimit = [
+			'ORDER BY' => 'rc_timestamp DESC',
+			'LIMIT' => $opts['limit']
+		];
+		if ( in_array( 'DISTINCT', $query_options ) ) {
+			// ChangeTags::modifyDisplayQuery() adds DISTINCT when filtering on multiple tags.
+			// In order to prevent DISTINCT from causing query performance problems,
+			// we have to GROUP BY the primary key. This in turn requires us to add
+			// the primary key to the end of the ORDER BY, and the old ORDER BY to the
+			// start of the GROUP BY
+			$orderByAndLimit['ORDER BY'] = 'rc_timestamp DESC, rc_id DESC';
+			$orderByAndLimit['GROUP BY'] = 'rc_timestamp, rc_id';
+		}
+		// array_merge() is used intentionally here so that hooks can, should
+		// they so desire, override the ORDER BY / LIMIT condition(s); prior to
+		// MediaWiki 1.26 this used to use the plus operator instead, which meant
+		// that extensions weren't able to change these conditions
+		$query_options = array_merge( $orderByAndLimit, $query_options );
+		$rows = $dbr->select(
+			$tables,
+			$fields,
+			// rc_new is not an ENUM, but adding a redundant rc_new IN (0,1) gives mysql enough
+			// knowledge to use an index merge if it wants (it may use some other index though).
+			$conds + [ 'rc_new' => [ 0, 1 ] ],
+			__METHOD__,
+			$query_options,
+			$join_conds
+		);
+
+		return $rows;
+	}
+
+	protected function runMainQueryHook( &$tables, &$fields, &$conds,
+		&$query_options, &$join_conds, $opts
+	) {
+		return parent::runMainQueryHook( $tables, $fields, $conds, $query_options, $join_conds, $opts )
+			&& Hooks::run(
+				'SpecialRecentChangesQuery',
+				[ &$conds, &$tables, &$join_conds, $opts, &$query_options, &$fields ],
+				'1.23'
+			);
+	}
+
+	protected function getDB() {
+		return wfGetDB( DB_REPLICA, 'recentchanges' );
+	}
+
+	public function outputFeedLinks() {
+		$this->addFeedLinks( $this->getFeedQuery() );
+	}
+
+	/**
+	 * Get URL query parameters for action=feedrecentchanges API feed of current recent changes view.
+	 *
+	 * @return array
+	 */
+	protected function getFeedQuery() {
+		$query = array_filter( $this->getOptions()->getAllValues(), function ( $value ) {
+			// API handles empty parameters in a different way
+			return $value !== '';
+		} );
+		$query['action'] = 'feedrecentchanges';
+		$feedLimit = $this->getConfig()->get( 'FeedLimit' );
+		if ( $query['limit'] > $feedLimit ) {
+			$query['limit'] = $feedLimit;
+		}
+
+		return $query;
+	}
+
+	/**
+	 * Build and output the actual changes list.
+	 *
+	 * @param IResultWrapper $rows Database rows
+	 * @param FormOptions $opts
+	 */
+	public function outputChangesList( $rows, $opts ) {
+		$limit = $opts['limit'];
+
+		$showWatcherCount = $this->getConfig()->get( 'RCShowWatchingUsers' )
+			&& $this->getUser()->getOption( 'shownumberswatching' );
+		$watcherCache = [];
+
+		$counter = 1;
+		$list = ChangesList::newFromContext( $this->getContext(), $this->filterGroups );
+		$list->initChangesListRows( $rows );
+
+		$userShowHiddenCats = $this->getUser()->getBoolOption( 'showhiddencats' );
+		$rclistOutput = $list->beginRecentChangesList();
+		if ( $this->isStructuredFilterUiEnabled() ) {
+			$rclistOutput .= $this->makeLegend();
+		}
+
+		foreach ( $rows as $obj ) {
+			if ( $limit == 0 ) {
+				break;
+			}
+			$rc = RecentChange::newFromRow( $obj );
+
+			# Skip CatWatch entries for hidden cats based on user preference
+			if (
+				$rc->getAttribute( 'rc_type' ) == RC_CATEGORIZE &&
+				!$userShowHiddenCats &&
+				$rc->getParam( 'hidden-cat' )
+			) {
+				continue;
+			}
+
+			$rc->counter = $counter++;
+			# Check if the page has been updated since the last visit
+			if ( $this->getConfig()->get( 'ShowUpdatedMarker' )
+				&& !empty( $obj->wl_notificationtimestamp )
+			) {
+				$rc->notificationtimestamp = ( $obj->rc_timestamp >= $obj->wl_notificationtimestamp );
+			} else {
+				$rc->notificationtimestamp = false; // Default
+			}
+			# Check the number of users watching the page
+			$rc->numberofWatchingusers = 0; // Default
+			if ( $showWatcherCount && $obj->rc_namespace >= 0 ) {
+				if ( !isset( $watcherCache[$obj->rc_namespace][$obj->rc_title] ) ) {
+					$watcherCache[$obj->rc_namespace][$obj->rc_title] =
+						MediaWikiServices::getInstance()->getWatchedItemStore()->countWatchers(
+							new TitleValue( (int)$obj->rc_namespace, $obj->rc_title )
+						);
+				}
+				$rc->numberofWatchingusers = $watcherCache[$obj->rc_namespace][$obj->rc_title];
+			}
+
+			$changeLine = $list->recentChangesLine( $rc, !empty( $obj->wl_user ), $counter );
+			if ( $changeLine !== false ) {
+				$rclistOutput .= $changeLine;
+				--$limit;
+			}
+		}
+		$rclistOutput .= $list->endRecentChangesList();
+
+		if ( $rows->numRows() === 0 ) {
+			$this->outputNoResults();
+			if ( !$this->including() ) {
+				$this->getOutput()->setStatusCode( 404 );
+			}
+		} else {
+			$this->getOutput()->addHTML( $rclistOutput );
+		}
+	}
+
+	/**
+	 * Set the text to be displayed above the changes
+	 *
+	 * @param FormOptions $opts
+	 * @param int $numRows Number of rows in the result to show after this header
+	 */
+	public function doHeader( $opts, $numRows ) {
+		$this->setTopText( $opts );
+
+		$defaults = $opts->getAllValues();
+		$nondefaults = $opts->getChangedValues();
+
+		$panel = [];
+		if ( !$this->isStructuredFilterUiEnabled() ) {
+			$panel[] = $this->makeLegend();
+		}
+		$panel[] = $this->optionsPanel( $defaults, $nondefaults, $numRows );
+		$panel[] = '<hr />';
+
+		$extraOpts = $this->getExtraOptions( $opts );
+		$extraOptsCount = count( $extraOpts );
+		$count = 0;
+		$submit = ' ' . Xml::submitButton( $this->msg( 'recentchanges-submit' )->text() );
+
+		$out = Xml::openElement( 'table', [ 'class' => 'mw-recentchanges-table' ] );
+		foreach ( $extraOpts as $name => $optionRow ) {
+			# Add submit button to the last row only
+			++$count;
+			$addSubmit = ( $count === $extraOptsCount ) ? $submit : '';
+
+			$out .= Xml::openElement( 'tr', [ 'class' => $name . 'Form' ] );
+			if ( is_array( $optionRow ) ) {
+				$out .= Xml::tags(
+					'td',
+					[ 'class' => 'mw-label mw-' . $name . '-label' ],
+					$optionRow[0]
+				);
+				$out .= Xml::tags(
+					'td',
+					[ 'class' => 'mw-input' ],
+					$optionRow[1] . $addSubmit
+				);
+			} else {
+				$out .= Xml::tags(
+					'td',
+					[ 'class' => 'mw-input', 'colspan' => 2 ],
+					$optionRow . $addSubmit
+				);
+			}
+			$out .= Xml::closeElement( 'tr' );
+		}
+		$out .= Xml::closeElement( 'table' );
+
+		$unconsumed = $opts->getUnconsumedValues();
+		foreach ( $unconsumed as $key => $value ) {
+			$out .= Html::hidden( $key, $value );
+		}
+
+		$t = $this->getPageTitle();
+		$out .= Html::hidden( 'title', $t->getPrefixedText() );
+		$form = Xml::tags( 'form', [ 'action' => wfScript() ], $out );
+		$panel[] = $form;
+		$panelString = implode( "\n", $panel );
+
+		$rcoptions = Xml::fieldset(
+			$this->msg( 'recentchanges-legend' )->text(),
+			$panelString,
+			[ 'class' => 'rcoptions cloptions' ]
+		);
+
+		// Insert a placeholder for RCFilters
+		if ( $this->isStructuredFilterUiEnabled() ) {
+			$rcfilterContainer = Html::element(
+				'div',
+				[ 'class' => 'rcfilters-container' ]
+			);
+
+			$loadingContainer = Html::rawElement(
+				'div',
+				[ 'class' => 'rcfilters-spinner' ],
+				Html::element(
+					'div',
+					[ 'class' => 'rcfilters-spinner-bounce' ]
+				)
+			);
+
+			// Wrap both with rcfilters-head
+			$this->getOutput()->addHTML(
+				Html::rawElement(
+					'div',
+					[ 'class' => 'rcfilters-head' ],
+					$rcfilterContainer . $rcoptions
+				)
+			);
+
+			// Add spinner
+			$this->getOutput()->addHTML( $loadingContainer );
+		} else {
+			$this->getOutput()->addHTML( $rcoptions );
+		}
+
+		$this->setBottomText( $opts );
+	}
+
+	/**
+	 * Send the text to be displayed above the options
+	 *
+	 * @param FormOptions $opts Unused
+	 */
+	function setTopText( FormOptions $opts ) {
+		global $wgContLang;
+
+		$message = $this->msg( 'recentchangestext' )->inContentLanguage();
+		if ( !$message->isDisabled() ) {
+			// Parse the message in this weird ugly way to preserve the ability to include interlanguage
+			// links in it (T172461). In the future when T66969 is resolved, perhaps we can just use
+			// $message->parse() instead. This code is copied from Message::parseText().
+			$parserOutput = MessageCache::singleton()->parse(
+				$message->plain(),
+				$this->getPageTitle(),
+				/*linestart*/true,
+				// Message class sets the interface flag to false when parsing in a language different than
+				// user language, and this is wiki content language
+				/*interface*/false,
+				$wgContLang
+			);
+			$content = $parserOutput->getText( [
+				'enableSectionEditLinks' => false,
+			] );
+			// Add only metadata here (including the language links), text is added below
+			$this->getOutput()->addParserOutputMetadata( $parserOutput );
+
+			$langAttributes = [
+				'lang' => $wgContLang->getHtmlCode(),
+				'dir' => $wgContLang->getDir(),
+			];
+
+			$topLinksAttributes = [ 'class' => 'mw-recentchanges-toplinks' ];
+
+			if ( $this->isStructuredFilterUiEnabled() ) {
+				// Check whether the widget is already collapsed or expanded
+				$collapsedState = $this->getRequest()->getCookie( 'rcfilters-toplinks-collapsed-state' );
+				// Note that an empty/unset cookie means collapsed, so check for !== 'expanded'
+				$topLinksAttributes[ 'class' ] .= $collapsedState !== 'expanded' ?
+					' mw-recentchanges-toplinks-collapsed' : '';
+
+				$this->getOutput()->enableOOUI();
+				$contentTitle = new OOUI\ButtonWidget( [
+					'classes' => [ 'mw-recentchanges-toplinks-title' ],
+					'label' => new OOUI\HtmlSnippet( $this->msg( 'rcfilters-other-review-tools' )->parse() ),
+					'framed' => false,
+					'indicator' => $collapsedState !== 'expanded' ? 'down' : 'up',
+					'flags' => [ 'progressive' ],
+				] );
+
+				$contentWrapper = Html::rawElement( 'div',
+					array_merge(
+						[ 'class' => 'mw-recentchanges-toplinks-content mw-collapsible-content' ],
+						$langAttributes
+					),
+					$content
+				);
+				$content = $contentTitle . $contentWrapper;
+			} else {
+				// Language direction should be on the top div only
+				// if the title is not there. If it is there, it's
+				// interface direction, and the language/dir attributes
+				// should be on the content itself
+				$topLinksAttributes = array_merge( $topLinksAttributes, $langAttributes );
+			}
+
+			$this->getOutput()->addHTML(
+				Html::rawElement( 'div', $topLinksAttributes, $content )
+			);
+		}
+	}
+
+	/**
+	 * Get options to be displayed in a form
+	 *
+	 * @param FormOptions $opts
+	 * @return array
+	 */
+	function getExtraOptions( $opts ) {
+		$opts->consumeValues( [
+			'namespace', 'invert', 'associated', 'tagfilter'
+		] );
+
+		$extraOpts = [];
+		$extraOpts['namespace'] = $this->namespaceFilterForm( $opts );
+
+		$tagFilter = ChangeTags::buildTagFilterSelector(
+			$opts['tagfilter'], false, $this->getContext() );
+		if ( count( $tagFilter ) ) {
+			$extraOpts['tagfilter'] = $tagFilter;
+		}
+
+		// Don't fire the hook for subclasses. (Or should we?)
+		if ( $this->getName() === 'Recentchanges' ) {
+			Hooks::run( 'SpecialRecentChangesPanel', [ &$extraOpts, $opts ] );
+		}
+
+		return $extraOpts;
+	}
+
+	/**
+	 * Add page-specific modules.
+	 */
+	protected function addModules() {
+		parent::addModules();
+		$out = $this->getOutput();
+		$out->addModules( 'mediawiki.special.recentchanges' );
 	}
 
 	/**
@@ -230,597 +686,271 @@ class SpecialRecentChanges extends IncludableSpecialPage {
 	 * Don't use this if we are using the patrol feature, patrol changes don't
 	 * update the timestamp
 	 *
-	 * @param $feedFormat String
-	 * @return String or false
+	 * @return string|bool
 	 */
-	public function checkLastModified( $feedFormat ) {
-		$dbr = wfGetDB( DB_SLAVE );
-		$lastmod = $dbr->selectField( 'recentchanges', 'MAX(rc_timestamp)', false, __METHOD__ );
-		if( $feedFormat || !$this->getUser()->useRCPatrol() ) {
-			if( $lastmod && $this->getOutput()->checkLastModified( $lastmod ) ) {
-				# Client cache fresh and headers sent, nothing more to do.
-				return false;
-			}
-		}
+	public function checkLastModified() {
+		$dbr = $this->getDB();
+		$lastmod = $dbr->selectField( 'recentchanges', 'MAX(rc_timestamp)', '', __METHOD__ );
+
 		return $lastmod;
 	}
 
 	/**
-	 * Return an array of conditions depending of options set in $opts
-	 *
-	 * @param $opts FormOptions
-	 * @return array
-	 */
-	public function buildMainQueryConds( FormOptions $opts ) {
-		$dbr = wfGetDB( DB_SLAVE );
-		$conds = array();
-
-		# It makes no sense to hide both anons and logged-in users
-		# Where this occurs, force anons to be shown
-		$forcebot = false;
-		if( $opts['hideanons'] && $opts['hideliu'] ){
-			# Check if the user wants to show bots only
-			if( $opts['hidebots'] ){
-				$opts['hideanons'] = false;
-			} else {
-				$forcebot = true;
-				$opts['hidebots'] = false;
-			}
-		}
-
-		// Calculate cutoff
-		$cutoff_unixtime = time() - ( $opts['days'] * 86400 );
-		$cutoff_unixtime = $cutoff_unixtime - ($cutoff_unixtime % 86400);
-		$cutoff = $dbr->timestamp( $cutoff_unixtime );
-
-		$fromValid = preg_match('/^[0-9]{14}$/', $opts['from']);
-		if( $fromValid && $opts['from'] > wfTimestamp(TS_MW,$cutoff) ) {
-			$cutoff = $dbr->timestamp($opts['from']);
-		} else {
-			$opts->reset( 'from' );
-		}
-
-		$conds[] = 'rc_timestamp >= ' . $dbr->addQuotes( $cutoff );
-
-
-		$hidePatrol = $this->getUser()->useRCPatrol() && $opts['hidepatrolled'];
-		$hideLoggedInUsers = $opts['hideliu'] && !$forcebot;
-		$hideAnonymousUsers = $opts['hideanons'] && !$forcebot;
-
-		if( $opts['hideminor'] ) {
-			$conds['rc_minor'] = 0;
-		}
-		if( $opts['hidebots'] ) {
-			$conds['rc_bot'] = 0;
-		}
-		if( $hidePatrol ) {
-			$conds['rc_patrolled'] = 0;
-		}
-		if( $forcebot ) {
-			$conds['rc_bot'] = 1;
-		}
-		if( $hideLoggedInUsers ) {
-			$conds[] = 'rc_user = 0';
-		}
-		if( $hideAnonymousUsers ) {
-			$conds[] = 'rc_user != 0';
-		}
-
-		if( $opts['hidemyself'] ) {
-			if( $this->getUser()->getId() ) {
-				$conds[] = 'rc_user != ' . $dbr->addQuotes( $this->getUser()->getId() );
-			} else {
-				$conds[] = 'rc_user_text != ' . $dbr->addQuotes( $this->getUser()->getName() );
-			}
-		}
-
-		# Namespace filtering
-		if( $opts['namespace'] !== '' ) {
-			$namespaces[] = $opts['namespace'];
-
-			$inversionSuffix = $opts['invert'] ? '!' : '';
-			
-			if( $opts['associated'] ) {
-				# namespace association (bug 2429)
-				$namespaces[] = MWNamespace::getAssociated( $opts['namespace'] );
-			}
-
-			$condition = $dbr->makeList(
-				array( 'rc_namespace' . $inversionSuffix
-					=> $namespaces ),
-				LIST_AND
-			);
-
-			$conds[] = $condition;
-		}
-
-		return $conds;
-	}
-
-	/**
-	 * Process the query
-	 *
-	 * @param $conds Array
-	 * @param $opts FormOptions
-	 * @return database result or false (for Recentchangeslinked only)
-	 */
-	public function doMainQuery( $conds, $opts ) {
-		$tables = array( 'recentchanges' );
-		$join_conds = array();
-		$query_options = array(
-			'USE INDEX' => array( 'recentchanges' => 'rc_timestamp' )
-		);
-
-		$uid = $this->getUser()->getId();
-		$dbr = wfGetDB( DB_SLAVE );
-		$limit = $opts['limit'];
-		$namespace = $opts['namespace'];
-		$invert = $opts['invert'];
-
-		$fields = array( $dbr->tableName( 'recentchanges' ) . '.*' ); // all rc columns
-		// JOIN on watchlist for users
-		if ( $uid ) {
-			$tables[] = 'watchlist';
-			$fields[] = 'wl_user';
-			$fields[] = 'wl_notificationtimestamp';
-			$join_conds['watchlist'] = array('LEFT JOIN',
-				"wl_user={$uid} AND wl_title=rc_title AND wl_namespace=rc_namespace");
-		}
-		if ( $this->getUser()->isAllowed( 'rollback' ) ) {
-			$tables[] = 'page';
-			$fields[] = 'page_latest';
-			$join_conds['page'] = array('LEFT JOIN', 'rc_cur_id=page_id');
-		}
-		if ( !$this->including() ) {
-			// Tag stuff.
-			// Doesn't work when transcluding. See bug 23293
-			ChangeTags::modifyDisplayQuery(
-				$tables, $fields, $conds, $join_conds, $query_options,
-				$opts['tagfilter']
-			);
-		}
-
-		if ( !wfRunHooks( 'SpecialRecentChangesQuery',
-			array( &$conds, &$tables, &$join_conds, $opts, &$query_options, &$fields ) ) )
-		{
-			return false;
-		}
-
-		// Don't use the new_namespace_time timestamp index if:
-		// (a) "All namespaces" selected
-		// (b) We want all pages NOT in a certain namespaces (inverted)
-		// (c) There is a tag to filter on (use tag index instead)
-		// (d) UNION + sort/limit is not an option for the DBMS
-		if( is_null( $namespace )
-			|| ( $invert && !is_null( $namespace ) )
-			|| $opts['tagfilter'] != ''
-			|| !$dbr->unionSupportsOrderAndLimit() )
-		{
-			$res = $dbr->select( $tables, $fields, $conds, __METHOD__,
-				array( 'ORDER BY' => 'rc_timestamp DESC', 'LIMIT' => $limit ) +
-				$query_options,
-				$join_conds );
-		// We have a new_namespace_time index! UNION over new=(0,1) and sort result set!
-		} else {
-			// New pages
-			$sqlNew = $dbr->selectSQLText(
-				$tables,
-				$fields,
-				array( 'rc_new' => 1 ) + $conds,
-				__METHOD__,
-				array(
-					'ORDER BY' => 'rc_timestamp DESC',
-					'LIMIT' => $limit,
-					'USE INDEX' => array( 'recentchanges' => 'rc_timestamp' )
-				),
-				$join_conds
-			);
-			// Old pages
-			$sqlOld = $dbr->selectSQLText(
-				$tables,
-				$fields,
-				array( 'rc_new' => 0 ) + $conds,
-				__METHOD__,
-				array(
-					'ORDER BY' => 'rc_timestamp DESC',
-					'LIMIT' => $limit,
-					'USE INDEX' => array( 'recentchanges' => 'rc_timestamp' )
-				),
-				$join_conds
-			);
-			# Join the two fast queries, and sort the result set
-			$sql = $dbr->unionQueries( array( $sqlNew, $sqlOld ), false ) .
-				' ORDER BY rc_timestamp DESC';
-			$sql = $dbr->limitResult( $sql, $limit, false );
-			$res = $dbr->query( $sql, __METHOD__ );
-		}
-
-		return $res;
-	}
-
-	/**
-	 * Send output to $wgOut, only called if not used feeds
-	 *
-	 * @param $rows Array of database rows
-	 * @param $opts FormOptions
-	 */
-	public function webOutput( $rows, $opts ) {
-		global $wgOut, $wgRCShowWatchingUsers, $wgShowUpdatedMarker;
-		global $wgAllowCategorizedRecentChanges;
-
-		$limit = $opts['limit'];
-
-		if( !$this->including() ) {
-			// Output options box
-			$this->doHeader( $opts );
-		}
-
-		// And now for the content
-		$wgOut->setFeedAppendQuery( $this->getFeedQuery() );
-
-		if( $wgAllowCategorizedRecentChanges ) {
-			$this->filterByCategories( $rows, $opts );
-		}
-
-		$showWatcherCount = $wgRCShowWatchingUsers && $this->getUser()->getOption( 'shownumberswatching' );
-		$watcherCache = array();
-
-		$dbr = wfGetDB( DB_SLAVE );
-
-		$counter = 1;
-		$list = ChangesList::newFromUser( $this->getUser() );
-
-		$s = $list->beginRecentChangesList();
-		foreach( $rows as $obj ) {
-			if( $limit == 0 ) {
-				break;
-			}
-			$rc = RecentChange::newFromRow( $obj );
-			$rc->counter = $counter++;
-			# Check if the page has been updated since the last visit
-			if( $wgShowUpdatedMarker && !empty( $obj->wl_notificationtimestamp ) ) {
-				$rc->notificationtimestamp = ( $obj->rc_timestamp >= $obj->wl_notificationtimestamp );
-			} else {
-				$rc->notificationtimestamp = false; // Default
-			}
-			# Check the number of users watching the page
-			$rc->numberofWatchingusers = 0; // Default
-			if( $showWatcherCount && $obj->rc_namespace >= 0 ) {
-				if( !isset( $watcherCache[$obj->rc_namespace][$obj->rc_title] ) ) {
-					$watcherCache[$obj->rc_namespace][$obj->rc_title] =
-						$dbr->selectField(
-							'watchlist',
-							'COUNT(*)',
-							array(
-								'wl_namespace' => $obj->rc_namespace,
-								'wl_title' => $obj->rc_title,
-							),
-							__METHOD__ . '-watchers'
-						);
-				}
-				$rc->numberofWatchingusers = $watcherCache[$obj->rc_namespace][$obj->rc_title];
-			}
-			$s .= $list->recentChangesLine( $rc, !empty( $obj->wl_user ), $counter );
-			--$limit;
-		}
-		$s .= $list->endRecentChangesList();
-		$wgOut->addHTML( $s );
-	}
-
-	/**
-	 * Get the query string to append to feed link URLs.
-	 * This is overridden by RCL to add the target parameter
-	 */
-	public function getFeedQuery() {
-		return false;
-	}
-
-	/**
-	 * Return the text to be displayed above the changes
-	 *
-	 * @param $opts FormOptions
-	 * @return String: XHTML
-	 */
-	public function doHeader( $opts ) {
-		global $wgScript, $wgOut;
-
-		$this->setTopText( $wgOut, $opts );
-
-		$defaults = $opts->getAllValues();
-		$nondefaults = $opts->getChangedValues();
-		$opts->consumeValues( array(
-			'namespace', 'invert', 'associated', 'tagfilter',
-			'categories', 'categories_any'
-		) );
-
-		$panel = array();
-		$panel[] = $this->optionsPanel( $defaults, $nondefaults );
-		$panel[] = '<hr />';
-
-		$extraOpts = $this->getExtraOptions( $opts );
-		$extraOptsCount = count( $extraOpts );
-		$count = 0;
-		$submit = ' ' . Xml::submitbutton( wfMsg( 'allpagessubmit' ) );
-
-		$out = Xml::openElement( 'table', array( 'class' => 'mw-recentchanges-table' ) );
-		foreach( $extraOpts as $optionRow ) {
-			# Add submit button to the last row only
-			++$count;
-			$addSubmit = $count === $extraOptsCount ? $submit : '';
-
-			$out .= Xml::openElement( 'tr' );
-			if( is_array( $optionRow ) ) {
-				$out .= Xml::tags( 'td', array( 'class' => 'mw-label' ), $optionRow[0] );
-				$out .= Xml::tags( 'td', array( 'class' => 'mw-input' ), $optionRow[1] . $addSubmit );
-			} else {
-				$out .= Xml::tags( 'td', array( 'class' => 'mw-input', 'colspan' => 2 ), $optionRow . $addSubmit );
-			}
-			$out .= Xml::closeElement( 'tr' );
-		}
-		$out .= Xml::closeElement( 'table' );
-
-		$unconsumed = $opts->getUnconsumedValues();
-		foreach( $unconsumed as $key => $value ) {
-			$out .= Html::hidden( $key, $value );
-		}
-
-		$t = $this->getTitle();
-		$out .= Html::hidden( 'title', $t->getPrefixedText() );
-		$form = Xml::tags( 'form', array( 'action' => $wgScript ), $out );
-		$panel[] = $form;
-		$panelString = implode( "\n", $panel );
-
-		$wgOut->addHTML(
-			Xml::fieldset( wfMsg( 'recentchanges-legend' ), $panelString, array( 'class' => 'rcoptions' ) )
-		);
-
-		$this->setBottomText( $wgOut, $opts );
-	}
-
-	/**
-	 * Get options to be displayed in a form
-	 *
-	 * @param $opts FormOptions
-	 * @return Array
-	 */
-	function getExtraOptions( $opts ) {
-		$extraOpts = array();
-		$extraOpts['namespace'] = $this->namespaceFilterForm( $opts );
-
-		global $wgAllowCategorizedRecentChanges;
-		if( $wgAllowCategorizedRecentChanges ) {
-			$extraOpts['category'] = $this->categoryFilterForm( $opts );
-		}
-
-		$tagFilter = ChangeTags::buildTagFilterSelector( $opts['tagfilter'] );
-		if ( count( $tagFilter ) ) {
-			$extraOpts['tagfilter'] = $tagFilter;
-		}
-
-		wfRunHooks( 'SpecialRecentChangesPanel', array( &$extraOpts, $opts ) );
-		return $extraOpts;
-	}
-
-	/**
-	 * Send the text to be displayed above the options
-	 *
-	 * @param $out OutputPage
-	 * @param $opts FormOptions
-	 */
-	function setTopText( OutputPage $out, FormOptions $opts ) {
-		$out->addWikiText( wfMsgForContentNoTrans( 'recentchangestext' ) );
-	}
-
-	/**
-	 * Send the text to be displayed after the options, for use in
-	 * Recentchangeslinked
-	 *
-	 * @param $out OutputPage
-	 * @param $opts FormOptions
-	 */
-	function setBottomText( OutputPage $out, FormOptions $opts ) {}
-
-	/**
 	 * Creates the choose namespace selection
 	 *
-	 * @todo Uses radio buttons (HASHAR)
-	 * @param $opts FormOptions
-	 * @return String
+	 * @param FormOptions $opts
+	 * @return string
 	 */
 	protected function namespaceFilterForm( FormOptions $opts ) {
-		$nsSelect = Xml::namespaceSelector( $opts['namespace'], '' );
-		$nsLabel = Xml::label( wfMsg( 'namespace' ), 'namespace' );
-		$invert = Xml::checkLabel( wfMsg( 'invert' ), 'invert', 'nsinvert', $opts['invert'] );
-		$associated = Xml::checkLabel(
-			wfMsg( 'namespace_association' ), 'associated', 'nsassociated',
-			$opts['associated']
+		$nsSelect = Html::namespaceSelector(
+			[ 'selected' => $opts['namespace'], 'all' => '' ],
+			[ 'name' => 'namespace', 'id' => 'namespace' ]
 		);
-		return array( $nsLabel, "$nsSelect $invert $associated" );
-	}
+		$nsLabel = Xml::label( $this->msg( 'namespace' )->text(), 'namespace' );
+		$invert = Xml::checkLabel(
+			$this->msg( 'invert' )->text(), 'invert', 'nsinvert',
+			$opts['invert'],
+			[ 'title' => $this->msg( 'tooltip-invert' )->text() ]
+		);
+		$associated = Xml::checkLabel(
+			$this->msg( 'namespace_association' )->text(), 'associated', 'nsassociated',
+			$opts['associated'],
+			[ 'title' => $this->msg( 'tooltip-namespace_association' )->text() ]
+		);
 
-	/**
-	 * Create a input to filter changes by categories
-	 *
-	 * @param $opts FormOptions
-	 * @return Array
-	 */
-	protected function categoryFilterForm( FormOptions $opts ) {
-		list( $label, $input ) = Xml::inputLabelSep( wfMsg( 'rc_categories' ),
-			'categories', 'mw-categories', false, $opts['categories'] );
-
-		$input .= ' ' . Xml::checkLabel( wfMsg( 'rc_categories_any' ),
-			'categories_any', 'mw-categories_any', $opts['categories_any'] );
-
-		return array( $label, $input );
+		return [ $nsLabel, "$nsSelect $invert $associated" ];
 	}
 
 	/**
 	 * Filter $rows by categories set in $opts
 	 *
-	 * @param $rows Array of database rows
-	 * @param $opts FormOptions
+	 * @deprecated since 1.31
+	 *
+	 * @param IResultWrapper &$rows Database rows
+	 * @param FormOptions $opts
 	 */
 	function filterByCategories( &$rows, FormOptions $opts ) {
-		$categories = array_map( 'trim', explode( '|' , $opts['categories'] ) );
+		wfDeprecated( __METHOD__, '1.31' );
 
-		if( !count( $categories ) ) {
+		$categories = array_map( 'trim', explode( '|', $opts['categories'] ) );
+
+		if ( !count( $categories ) ) {
 			return;
 		}
 
 		# Filter categories
-		$cats = array();
-		foreach( $categories as $cat ) {
+		$cats = [];
+		foreach ( $categories as $cat ) {
 			$cat = trim( $cat );
-			if( $cat == '' ) {
+			if ( $cat == '' ) {
 				continue;
 			}
 			$cats[] = $cat;
 		}
 
 		# Filter articles
-		$articles = array();
-		$a2r = array();
-		$rowsarr = array();
-		foreach( $rows as $k => $r ) {
+		$articles = [];
+		$a2r = [];
+		$rowsarr = [];
+		foreach ( $rows as $k => $r ) {
 			$nt = Title::makeTitle( $r->rc_namespace, $r->rc_title );
 			$id = $nt->getArticleID();
-			if( $id == 0 ) {
+			if ( $id == 0 ) {
 				continue; # Page might have been deleted...
 			}
-			if( !in_array( $id, $articles ) ) {
+			if ( !in_array( $id, $articles ) ) {
 				$articles[] = $id;
 			}
-			if( !isset( $a2r[$id] ) ) {
-				$a2r[$id] = array();
+			if ( !isset( $a2r[$id] ) ) {
+				$a2r[$id] = [];
 			}
 			$a2r[$id][] = $k;
 			$rowsarr[$k] = $r;
 		}
 
 		# Shortcut?
-		if( !count( $articles ) || !count( $cats ) ) {
+		if ( !count( $articles ) || !count( $cats ) ) {
 			return;
 		}
 
 		# Look up
-		$c = new Categoryfinder;
-		$c->seed( $articles, $cats, $opts['categories_any'] ? 'OR' : 'AND' );
-		$match = $c->run();
+		$catFind = new CategoryFinder;
+		$catFind->seed( $articles, $cats, $opts['categories_any'] ? 'OR' : 'AND' );
+		$match = $catFind->run();
 
 		# Filter
-		$newrows = array();
-		foreach( $match as $id ) {
-			foreach( $a2r[$id] as $rev ) {
+		$newrows = [];
+		foreach ( $match as $id ) {
+			foreach ( $a2r[$id] as $rev ) {
 				$k = $rev;
 				$newrows[$k] = $rowsarr[$k];
 			}
 		}
-		$rows = $newrows;
+		$rows = new FakeResultWrapper( array_values( $newrows ) );
 	}
 
 	/**
 	 * Makes change an option link which carries all the other options
 	 *
-	 * @param $title Title
-	 * @param $override Array: options to override
-	 * @param $options Array: current options
-	 * @param $active Boolean: whether to show the link in bold
+	 * @param string $title
+	 * @param array $override Options to override
+	 * @param array $options Current options
+	 * @param bool $active Whether to show the link in bold
+	 * @return string
 	 */
 	function makeOptionsLink( $title, $override, $options, $active = false ) {
-		$params = $override + $options;
+		$params = $this->convertParamsForLink( $override + $options );
+
 		if ( $active ) {
-			return $this->getSkin()->link(
-				$this->getTitle(),
-				'<strong>' . htmlspecialchars( $title ) . '</strong>',
-				array(), $params, array( 'known' ) );
-		} else {
-			return $this->getSkin()->link(
-				$this->getTitle(), htmlspecialchars( $title ), array(),
-				$params, array( 'known' ) );
+			$title = new HtmlArmor( '<strong>' . htmlspecialchars( $title ) . '</strong>' );
 		}
+
+		return $this->getLinkRenderer()->makeKnownLink( $this->getPageTitle(), $title, [
+			'data-params' => json_encode( $override ),
+			'data-keys' => implode( ',', array_keys( $override ) ),
+		], $params );
 	}
 
 	/**
 	 * Creates the options panel.
 	 *
-	 * @param $defaults Array
-	 * @param $nondefaults Array
+	 * @param array $defaults
+	 * @param array $nondefaults
+	 * @param int $numRows Number of rows in the result to show after this header
+	 * @return string
 	 */
-	function optionsPanel( $defaults, $nondefaults ) {
-		global $wgLang, $wgRCLinkLimits, $wgRCLinkDays;
-
+	function optionsPanel( $defaults, $nondefaults, $numRows ) {
 		$options = $nondefaults + $defaults;
 
 		$note = '';
-		if( !wfEmptyMsg( 'rclegend' ) ) {
-			$note .= '<div class="mw-rclegend">' .
-				wfMsgExt( 'rclegend', array( 'parseinline' ) ) . "</div>\n";
+		$msg = $this->msg( 'rclegend' );
+		if ( !$msg->isDisabled() ) {
+			$note .= '<div class="mw-rclegend">' . $msg->parse() . "</div>\n";
 		}
-		if( $options['from'] ) {
-			$note .= wfMsgExt( 'rcnotefrom', array( 'parseinline' ),
-				$wgLang->formatNum( $options['limit'] ),
-				$wgLang->timeanddate( $options['from'], true ),
-				$wgLang->date( $options['from'], true ),
-				$wgLang->time( $options['from'], true ) ) . '<br />';
+
+		$lang = $this->getLanguage();
+		$user = $this->getUser();
+		$config = $this->getConfig();
+		if ( $options['from'] ) {
+			$resetLink = $this->makeOptionsLink( $this->msg( 'rclistfromreset' ),
+				[ 'from' => '' ], $nondefaults );
+
+			$noteFromMsg = $this->msg( 'rcnotefrom' )
+				->numParams( $options['limit'] )
+				->params(
+					$lang->userTimeAndDate( $options['from'], $user ),
+					$lang->userDate( $options['from'], $user ),
+					$lang->userTime( $options['from'], $user )
+				)
+				->numParams( $numRows );
+			$note .= Html::rawElement(
+					'span',
+					[ 'class' => 'rcnotefrom' ],
+					$noteFromMsg->parse()
+				) .
+				' ' .
+				Html::rawElement(
+					'span',
+					[ 'class' => 'rcoptions-listfromreset' ],
+					$this->msg( 'parentheses' )->rawParams( $resetLink )->parse()
+				) .
+				'<br />';
 		}
 
 		# Sort data for display and make sure it's unique after we've added user data.
-		$wgRCLinkLimits[] = $options['limit'];
-		$wgRCLinkDays[] = $options['days'];
-		sort( $wgRCLinkLimits );
-		sort( $wgRCLinkDays );
-		$wgRCLinkLimits = array_unique( $wgRCLinkLimits );
-		$wgRCLinkDays = array_unique( $wgRCLinkDays );
+		$linkLimits = $config->get( 'RCLinkLimits' );
+		$linkLimits[] = $options['limit'];
+		sort( $linkLimits );
+		$linkLimits = array_unique( $linkLimits );
+
+		$linkDays = $config->get( 'RCLinkDays' );
+		$linkDays[] = $options['days'];
+		sort( $linkDays );
+		$linkDays = array_unique( $linkDays );
 
 		// limit links
-		foreach( $wgRCLinkLimits as $value ) {
-			$cl[] = $this->makeOptionsLink( $wgLang->formatNum( $value ),
-				array( 'limit' => $value ), $nondefaults, $value == $options['limit'] );
+		$cl = [];
+		foreach ( $linkLimits as $value ) {
+			$cl[] = $this->makeOptionsLink( $lang->formatNum( $value ),
+				[ 'limit' => $value ], $nondefaults, $value == $options['limit'] );
 		}
-		$cl = $wgLang->pipeList( $cl );
+		$cl = $lang->pipeList( $cl );
 
 		// day links, reset 'from' to none
-		foreach( $wgRCLinkDays as $value ) {
-			$dl[] = $this->makeOptionsLink( $wgLang->formatNum( $value ),
-				array( 'days' => $value, 'from' => '' ), $nondefaults, $value == $options['days'] );
+		$dl = [];
+		foreach ( $linkDays as $value ) {
+			$dl[] = $this->makeOptionsLink( $lang->formatNum( $value ),
+				[ 'days' => $value, 'from' => '' ], $nondefaults, $value == $options['days'] );
 		}
-		$dl = $wgLang->pipeList( $dl );
+		$dl = $lang->pipeList( $dl );
 
+		$showhide = [ 'show', 'hide' ];
 
-		// show/hide links
-		$showhide = array( wfMsg( 'show' ), wfMsg( 'hide' ) );
-		$minorLink = $this->makeOptionsLink( $showhide[1 - $options['hideminor']],
-			array( 'hideminor' => 1-$options['hideminor'] ), $nondefaults );
-		$botLink = $this->makeOptionsLink( $showhide[1 - $options['hidebots']],
-			array( 'hidebots' => 1-$options['hidebots'] ), $nondefaults );
-		$anonsLink = $this->makeOptionsLink( $showhide[ 1 - $options['hideanons'] ],
-			array( 'hideanons' => 1 - $options['hideanons'] ), $nondefaults );
-		$liuLink   = $this->makeOptionsLink( $showhide[1 - $options['hideliu']],
-			array( 'hideliu' => 1-$options['hideliu'] ), $nondefaults );
-		$patrLink  = $this->makeOptionsLink( $showhide[1 - $options['hidepatrolled']],
-			array( 'hidepatrolled' => 1-$options['hidepatrolled'] ), $nondefaults );
-		$myselfLink = $this->makeOptionsLink( $showhide[1 - $options['hidemyself']],
-			array( 'hidemyself' => 1-$options['hidemyself'] ), $nondefaults );
+		$links = [];
 
-		$links[] = wfMsgHtml( 'rcshowhideminor', $minorLink );
-		$links[] = wfMsgHtml( 'rcshowhidebots', $botLink );
-		$links[] = wfMsgHtml( 'rcshowhideanons', $anonsLink );
-		$links[] = wfMsgHtml( 'rcshowhideliu', $liuLink );
-		if( $this->getUser()->useRCPatrol() ) {
-			$links[] = wfMsgHtml( 'rcshowhidepatr', $patrLink );
+		foreach ( $this->getLegacyShowHideFilters() as $key => $filter ) {
+			$msg = $filter->getShowHide();
+			$linkMessage = $this->msg( $msg . '-' . $showhide[1 - $options[$key]] );
+			// Extensions can define additional filters, but don't need to define the corresponding
+			// messages. If they don't exist, just fall back to 'show' and 'hide'.
+			if ( !$linkMessage->exists() ) {
+				$linkMessage = $this->msg( $showhide[1 - $options[$key]] );
+			}
+
+			$link = $this->makeOptionsLink( $linkMessage->text(),
+				[ $key => 1 - $options[$key] ], $nondefaults );
+
+			$attribs = [
+				'class' => "$msg rcshowhideoption clshowhideoption",
+				'data-filter-name' => $filter->getName(),
+			];
+
+			if ( $filter->isFeatureAvailableOnStructuredUi( $this ) ) {
+				$attribs['data-feature-in-structured-ui'] = true;
+			}
+
+			$links[] = Html::rawElement(
+				'span',
+				$attribs,
+				$this->msg( $msg )->rawParams( $link )->parse()
+			);
 		}
-		$links[] = wfMsgHtml( 'rcshowhidemine', $myselfLink );
-		$hl = $wgLang->pipeList( $links );
 
 		// show from this onward link
-		$now = $wgLang->timeanddate( wfTimestampNow(), true );
-		$tl = $this->makeOptionsLink(
-			$now, array( 'from' => wfTimestampNow() ), $nondefaults
-		);
+		$timestamp = wfTimestampNow();
+		$now = $lang->userTimeAndDate( $timestamp, $user );
+		$timenow = $lang->userTime( $timestamp, $user );
+		$datenow = $lang->userDate( $timestamp, $user );
+		$pipedLinks = '<span class="rcshowhide">' . $lang->pipeList( $links ) . '</span>';
 
-		$rclinks = wfMsgExt( 'rclinks', array( 'parseinline', 'replaceafter' ),
-			$cl, $dl, $hl );
-		$rclistfrom = wfMsgExt( 'rclistfrom', array( 'parseinline', 'replaceafter' ), $tl );
-		return "{$note}$rclinks<br />$rclistfrom";
+		$rclinks = '<span class="rclinks">' . $this->msg( 'rclinks' )->rawParams( $cl, $dl, '' )
+			->parse() . '</span>';
+
+		$rclistfrom = '<span class="rclistfrom">' . $this->makeOptionsLink(
+			$this->msg( 'rclistfrom' )->rawParams( $now, $timenow, $datenow )->parse(),
+			[ 'from' => $timestamp ],
+			$nondefaults
+		) . '</span>';
+
+		return "{$note}$rclinks<br />$pipedLinks<br />$rclistfrom";
+	}
+
+	public function isIncludable() {
+		return true;
+	}
+
+	protected function getCacheTTL() {
+		return 60 * 5;
+	}
+
+	public function getDefaultLimit() {
+		$systemPrefValue = $this->getUser()->getIntOption( 'rclimit' );
+		// Prefer the RCFilters-specific preference if RCFilters is enabled
+		if ( $this->isStructuredFilterUiEnabled() ) {
+			return $this->getUser()->getIntOption( static::$limitPreferenceName, $systemPrefValue );
+		}
+
+		// Otherwise, use the system rclimit preference value
+		return $systemPrefValue;
 	}
 }
