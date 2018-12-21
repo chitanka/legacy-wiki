@@ -21,8 +21,7 @@ $wgHooks['UserLoadFromSession'][] = 'doAuthWithMylib';
 $wgHooks['PersonalUrls'][] = 'removeAuthUrls';
 
 
-function doAuthWithMylib($user, &$result)
-{
+function doAuthWithMylib($user, &$result) {
 	wfSetupSession();
 
 	$mylibUser = getValidMylibUser();
@@ -57,11 +56,7 @@ function doAuthWithMylib($user, &$result)
 
 		$user->saveSettings();
 	} else {
-		if ( ! $user->loadFromDatabase() ) {
-			// Can't load from ID, user is anonymous
-			return true;
-		}
-		$user->saveToCache();
+		$user->loadFromId();
 	}
 
 	$result = true; // skip the rest of the authentication process
@@ -69,30 +64,29 @@ function doAuthWithMylib($user, &$result)
 }
 
 
-function removeAuthUrls(&$personal_urls, $title)
-{
+function removeAuthUrls(&$personal_urls, $title) {
 	foreach (array(/*'login', */'anonuserpage', 'anontalk') as $action) {
 		if ( isset($personal_urls[$action]) ) {
 			unset($personal_urls[$action]);
 		}
 	}
 
-	if ( isset($personal_urls['anonlogin']) ) {
-		$returnto = urlencode('http://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
-		$personal_urls['anonlogin'] = array(
+	if ( isset($personal_urls['login']) ) {
+		$returnto = urlencode('//' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
+		$personal_urls['login'] = array(
 			'text' => 'Вход',
-			'href' => 'http://chitanka.info/login?returnto='.$returnto,
+			'href' => '//chitanka.info/login?returnto='.$returnto,
 		);
 		$personal_urls['register'] = array(
 			'text' => 'Регистрация',
-			'href' => 'http://chitanka.info/register?returnto='.$returnto,
+			'href' => '//chitanka.info/register?returnto='.$returnto,
 		);
 	}
 
 	if ( isset($personal_urls['logout']) ) {
 		$personal_urls['logout'] = array(
 			'text' => 'Изход',
-			'href' => 'http://chitanka.info/signout'
+			'href' => '//chitanka.info/signout'
 		);
 	}
 
@@ -105,8 +99,7 @@ function removeAuthUrls(&$personal_urls, $title)
 * uses Title::getText() which includes the namespace name too
 * and always results in unknown user name
 */
-function mwUserIdFromName($name)
-{
+function mwUserIdFromName($name) {
 	$dbr = wfGetDB( DB_SLAVE );
 	$s = $dbr->selectRow( 'user', array( 'user_id' ), array( 'user_name' => $name ), __METHOD__ );
 
