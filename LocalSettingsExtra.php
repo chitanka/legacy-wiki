@@ -61,6 +61,7 @@ $wgPFEnableStringFunctions = true;
 require_once $IP . '/../mylib-single-login/get_user.php';
 require_once $IP . '/extensions/auth_mylib/auth_mylib.php';
 
+/*
 $wgHooks['ResourceLoaderRegisterModules'][] = 'registerMylibModule';
 
 function registerMylibModule($loader) {
@@ -71,3 +72,4 @@ function registerMylibModule($loader) {
 	));
 	return true;
 }
+*/
