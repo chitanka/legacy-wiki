@@ -1,7 +1,14 @@
 <?php
+$wgSitename         = "Уики на Читанка";
+
 wfLoadSkin( 'MonoBook' );
 wfLoadSkin( 'Vector' );
 wfLoadSkin( 'Timeless' );
+wfLoadSkin( 'Tweeki' );
+
+## Default skin: you can change the default skin. Use the internal symbolic
+## names, ie 'vector', 'monobook':
+$wgDefaultSkin = 'tweeki';
 
 $wgLocaltimezone = 'Europe/Sofia';
 date_default_timezone_set( $wgLocaltimezone );
